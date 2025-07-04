@@ -39,3 +39,46 @@ def log_progress_qrs(run_dir, iter_no, log_every_x_iterations, runtimes, all_ids
         if previous_save_iter_no >= 0:
             os.remove(f"{run_dir}/runtimes_{previous_save_iter_no}.npy")
             os.remove(f"{run_dir}/all_ids_and_diff_scores_{previous_save_iter_no}.npy")
+
+
+def log_init_twave(run_dir, log_inf_params, times_target_s, leads_target, alg, times_s, activation_times):
+    print("Logging before iterations begin")
+    np.save(f"{run_dir}/log_inf_params.npy", log_inf_params)
+    np.save(f"{run_dir}/times_target_s.npy", times_target_s)
+    np.save(f"{run_dir}/leads_target.npy", leads_target)
+    np.save(f"{run_dir}/times_s.npy", times_s)
+    np.save(f"{run_dir}/activation_times.npy", activation_times)
+    alg_utils.save_alg_mesh(f"{run_dir}/alg.alg", alg)
+
+
+def log_progress_twave_no_segments(run_dir, iter_no, log_every_x_iterations, runtimes, all_ids_and_diff_scores,
+                 population_ids, population_diff_scores, ids_and_ecgs_rts_params, population_reg_scores, misc_save=None):
+
+    print("Logging T wave progress")
+
+    if iter_no % log_every_x_iterations == 0:
+        # Save log files
+        np.save(f"{run_dir}/runtimes_{iter_no}.npy", runtimes)
+        np.save(f"{run_dir}/all_ids_and_diff_scores_{iter_no}.npy", all_ids_and_diff_scores)
+        population_ids_and_diff_scores = [population_ids, population_diff_scores, population_reg_scores]
+        np.save(f"{run_dir}/pop_ids_and_diffs/population_ids_and_diff_scores_{iter_no}.npy", population_ids_and_diff_scores)
+
+
+        for id, vals in ids_and_ecgs_rts_params.items():
+
+            apds = vals[2]["apd90s_ms"]
+            rts = vals[1]
+            ids_and_ecgs_rts_params[id][2]["apd90s_ms"] = np.array(apds, dtype=np.int16)
+
+        np.save(f"{run_dir}/ids_and_rts_and_ecgs_{iter_no}.npy", ids_and_ecgs_rts_params)
+
+        if misc_save is not None:
+
+            for i, item in enumerate(misc_save):
+                np.save(f"{run_dir}/misc_save_item{i}.npy", item)
+
+        # Remove previous log for runtimes and all_params_and_diff_scores only after saving latest
+        previous_save_iter_no = int(iter_no - log_every_x_iterations)
+        if previous_save_iter_no >= 0:
+            os.remove(f"{run_dir}/runtimes_{previous_save_iter_no}.npy")
+            os.remove(f"{run_dir}/all_ids_and_diff_scores_{previous_save_iter_no}.npy")

@@ -547,3 +547,13 @@ def measure_similarity_qrs(leads_a, leads_b, lead_names_to_compare=None):
                 lead_diffs[key] = sum(diffs) / len(lead_a)  # Mean diffs per sample
 
     return lead_diffs
+
+
+def find_optimal_scaling(leads_a, leads_b):
+    # Optimal scaling for leads_a to be comparable to leads_b
+    leads_a_signal = np.concatenate([leads_a[lead] for lead in leads_a])
+    leads_b_signal = np.concatenate([leads_b[lead] for lead in leads_b])
+    numerator = np.sum(leads_a_signal * leads_b_signal)
+    denominator = np.sum(leads_a_signal ** 2)
+    alpha = numerator / denominator if denominator != 0 else 0
+    return alpha
