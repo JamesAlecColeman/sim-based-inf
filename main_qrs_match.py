@@ -202,7 +202,6 @@ def main():
     xs_endo, ys_endo, zs_endo = xs[endo_idxs], ys[endo_idxs], zs[endo_idxs]
     alg_endo = alg_utils.alg_from_xs(xs_endo, ys_endo, zs_endo)
 
-
     # Preprocessing for pseudo ECG computation
     grid_dict = alg_utils.make_grid_dictionary(xs, ys, zs)
     neighbour_arrays, neighbour_arrays2 = ecg.get_neighbour_arrays(xs, ys, zs, dx, grid_dict)
@@ -342,9 +341,8 @@ def main():
 
         # TODO it looks like we were comparing to target_leads_qrs_normed even with our new discrep metric?
         # Compute pseudo ECG leads from electrodes and compare to monoalg ECG leads
-        all_normed_leads_pseudo, population_diff_scores, all_leads_sim = qrsm.analyse_pseudo_electrodes_qrs_new(all_electrodes,
-                                                                                       target_leads_qrs, times_s, times_target_s[target_qrs_idxs],
-                                                                                        lead_names_to_compare=lead_names_to_compare)
+        all_normed_leads_pseudo, population_diff_scores, all_leads_sim = qrsm.analyse_pseudo_electrodes_qrs(all_electrodes,
+                                                                                       target_leads_qrs_normed, lead_names_to_compare=lead_names_to_compare)
         t1 = time.time()
 
         if n_tries != 0:
@@ -425,11 +423,6 @@ def main():
             fast_download_folder = f"fast_{benchmark_id}"
             alg_utils.save_alg_mesh(f"{run_dir}/{fast_download_folder}/bestguess_best_params_{iter_no}.alg", alg)
 
-        # Plot root indices of the best QRS match in the .alg
-        root_indices_best_guess = min_key[1]
-        near_root_alg_field = alg_utils.make_field_near_root_nodes(alg, root_indices_best_guess, 5000)
-        alg.append(near_root_alg_field)
-        alg_utils.save_alg_mesh(f"{run_dir}/root_guess_{mesh_alg_name}", alg, True)
 
         t11 = time.time()
 
@@ -461,30 +454,8 @@ def main():
         np.save(f"{run_dir}/py_ecg.npy", save_ecg)
 
     if plot:
-        # TODO if using new discrepancy metric then the plot should use the rescaling alpha
-
-        alpha = qrsm.find_optimal_scaling(best_leads, target_leads_qrs)
-        best_leads_rescaled = {name: best_leads[name] * alpha for name in lead_names}
-
-        ecg.plot_ecg([times_s, times_target_s[target_qrs_idxs]], [best_leads_rescaled, target_leads_qrs],
-                     colors=["red", "black"], xlims=[0, 0.45])
-
         ecg.plot_ecg([times_s, times_target_s[target_qrs_idxs]], [all_normed_leads_pseudo[0], target_leads_qrs_normed],
                     colors=["red", "black"], xlims=[0, 0.45])
-
-        """# Plots of ECGs
-        lead_names_all = LEAD_NAMES_12
-        fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(4.5, 6.5))
-        axes = axes.flatten()
-        for ax, lead_name in zip(axes, lead_names_all):
-
-            if lead_name in lead_names:
-                ax.plot(times_target_s[target_qrs_idxs], target_leads_qrs_normed[lead_name], color="black")
-            ax.plot(times_s, all_normed_leads_pseudo[0][lead_name], color="red", label="pseudo")
-
-            ax.set_title(lead_name)
-        plt.tight_layout()
-        plt.show()"""
 
 if __name__ == '__main__':
     main()
