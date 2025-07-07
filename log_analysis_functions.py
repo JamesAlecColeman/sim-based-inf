@@ -4,8 +4,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-def get_max_i_iter(benchmark_run_dir, prefix = "all_params_and_diff_scores"):
 
+def get_max_i_iter(benchmark_run_dir, prefix = "all_params_and_diff_scores"):
+    """Get the maximum completed iteration index from inference run
+
+    Args:
+        benchmark_run_dir (str): Path to inference run dir
+        prefix (str, optional): Filename prefix to match files containing iteration data.
+                                Default is "all_params_and_diff_scores"
+
+    Returns:
+        i_iter_maximum (int): Maximum iteration index found based on filenames
+    """
     filenames = [f for f in os.listdir(benchmark_run_dir) if f.startswith(prefix)]
 
     # In case we find 2 all_params_and_diff_scores (run ended mid-save)
@@ -18,7 +28,18 @@ def get_max_i_iter(benchmark_run_dir, prefix = "all_params_and_diff_scores"):
 
 
 def get_iteration_nos(benchmark_run_dir, i_population_name="population_params_and_diff_scores"):
-    # Extract iteration numbers from the population filenames
+    """Extract iteration numbers from inference run
+
+    Args:
+        benchmark_run_dir (str): Path to inference run dir
+        i_population_name (str, optional): Prefix of the filenames to search for iteration nos
+                                           Default is "population_params_and_diff_scores".
+
+    Returns:
+        iterations (list of int): Sorted list of iteration indices found in the filenames.
+        n_iterations (int): Maximum iteration number found.
+        log_every_x_iterations (int): Estimated logging frequency between saved iterations.
+    """
     iterations = []
     i_population_filenames = utils.find_files(benchmark_run_dir, i_population_name)
     for filename in i_population_filenames:
@@ -35,6 +56,24 @@ def get_iteration_nos(benchmark_run_dir, i_population_name="population_params_an
 
 
 def get_scores(benchmark_run_dir, i_iter, i_population_name="population_params_and_diff_scores", repol=True):
+    """Load diff and reg scores alongside params for a given iteration
+
+    Args:
+        benchmark_run_dir (str): Path to inference run dir
+        i_iter (int): Iteration number to load.
+        i_population_name (str, optional): Filename prefix for the population file.
+                                           Default is "population_params_and_diff_scores".
+        repol (bool, optional): Whether to use regularised scores (True) or raw diff scores (False).
+                                Default is True.
+
+    Returns:
+        min_diff_score (float): Minimum unregularised (diff) score in the population.
+        median_diff_score (float): Median unregularised (diff) score in the population.
+        best_params_diff (array-like): Parameters corresponding to the minimum diff score.
+        min_reg_score (float): Minimum regularised score (or diff score if `repol` is False).
+        median_reg_score (float): Median regularised score (or diff score if `repol` is False).
+        best_params_reg (array-like): Parameters corresponding to the minimum regularised score.
+    """
     i_population_params_and_diff_scores = np.load(f"{benchmark_run_dir}/{i_population_name}_{i_iter}.npy",
                                                   allow_pickle=True)
     pop_params, pop_diff_scores = i_population_params_and_diff_scores[0], i_population_params_and_diff_scores[1]
@@ -68,7 +107,34 @@ def get_scores(benchmark_run_dir, i_iter, i_population_name="population_params_a
 def apply_stop_condition(benchmark_run_dir, iterations, window_size=50, twave_diff_threshold=-0.0001,
                          force_iter_final=None, plot=False,
                          i_population_name="population_params_and_diff_scores", repol=True):
+    """Determine whether inference has converged based on stopping condition
 
+    Applies a moving average over median regularised scores and checks whether
+    the change has fallen below a specified threshold.
+
+    Args:
+        benchmark_run_dir (str): Path to inference run
+        iterations (list of int): List of iteration numbers to evaluate.
+        window_size (int, optional): Window size for moving average calculation. Default is 50.
+        twave_diff_threshold (float, optional): Threshold for the moving average of score differences
+                                                (absolute value). Default is -0.0001.
+        force_iter_final (int or str, optional): Force use of a specific final iteration.
+                                                 Use "max" to select the maximum available iteration.
+        plot (bool, optional): Whether to display a plot of the moving average. Default is False.
+        i_population_name (str, optional): Filename prefix of population score files.
+                                           Default is "population_params_and_diff_scores".
+        repol (bool, optional): Whether to use regularised scores (True) or raw diff scores (False).
+                                Default is True.
+
+    Returns:
+        i_iter_final (int): Chosen final iteration based on stop condition or override.
+        min_diff_score (float): Minimum unregularised score at final iteration.
+        median_diff_score (float): Median unregularised score at final iteration.
+        best_params_reg (array-like): Parameters corresponding to the best regularised score.
+        min_reg_score (float): Minimum regularised score at final iteration.
+        median_reg_score (float): Median regularised score at final iteration.
+        abs_moving_avg (ndarray or None): Absolute moving average of score differences, or None if not computed.
+    """
     if force_iter_final is None:
         min_scores, median_scores = [], []
 
@@ -109,7 +175,20 @@ def apply_stop_condition(benchmark_run_dir, iterations, window_size=50, twave_di
 
 
 def ids_to_storage_iter_nos(pop_ids, all_ids_and_diff_scores):
-    # Find which iterations we must load to retrieve ECGs and AT/RTs for the current population ids
+    """Map population IDs to the iteration numbers where their data is stored.
+
+    This identifies which iterations need to be loaded in order to retrieve ECGs and AT/RTs
+    corresponding to the given population IDs.
+
+    Args:
+        pop_ids (list): List of population IDs whose data is needed.
+        all_ids_and_diff_scores (dict): Dictionary mapping ID to a tuple where the second element
+                                        is the iteration number it was stored in.
+
+    Returns:
+        iter_nos_to_pop_ids (defaultdict): Dictionary mapping iteration numbers to lists of population IDs
+                                           that were stored in that iteration.
+    """
     iter_nos_to_pop_ids = defaultdict(list)  # dict {iter_no: [params1, params2, ...]}
     for id in pop_ids:
         iter_where_stored = all_ids_and_diff_scores[id][1]
@@ -118,7 +197,26 @@ def ids_to_storage_iter_nos(pop_ids, all_ids_and_diff_scores):
 
 
 def get_best_x_rts_or_ats(run_dir, iter_no, x_best_indices, all_ids_and_diff_scores, repol=True):
-    # pop_ids_and_diff_scores = [population_ids, population_diff_scores, population_reg_scores, population_params]
+    """Retrieve RTs (or ATs) and ECG leads for the top X best-scoring parameter sets.
+
+    Loads saved population data and identifies the top X individuals (based on regularised
+    or unregularised scores). Then retrieves their corresponding RTs/ATs and ECG leads
+    from storage.
+
+    Args:
+        run_dir (str): Path to the run directory containing population and ID mapping files.
+        iter_no (int): Iteration number to load population scores from.
+        x_best_indices (int): Number of best-scoring individuals to retrieve.
+        all_ids_and_diff_scores (dict): Mapping of individual IDs to their storage iteration number
+                                        and additional score/parameter data.
+        repol (bool, optional): Whether to use regularised scores (True) or unregularised diff scores (False).
+                                Default is True.
+
+    Returns:
+        best_x_rts (list): RT or AT values for the top X individuals (in order of score).
+        best_x_reg_scores (ndarray): Regularised (or unregularised) scores of the top X individuals.
+        best_x_leads (list): ECG lead dictionaries for the top X individuals.
+    """
     pop_ids_and_diff_scores = np.load(f"{run_dir}/pop_ids_and_diffs/population_ids_and_diff_scores_{iter_no}.npy",
                                       allow_pickle=True)
 
@@ -158,7 +256,21 @@ def get_best_x_rts_or_ats(run_dir, iter_no, x_best_indices, all_ids_and_diff_sco
 
 
 def find_inference_runs(inferences_path):
-    # Detects the targets e.g. "DTI003_500_ctrl"
+    """Find inference targets and their runs in a given directory.
+
+    Scans the specified inferences directory to identify target folders and the
+    inference runs within each target, excluding specific folders like 'analysis'
+    and 'mother_data'.
+
+    Args:
+        inferences_path (str): Path to the directory containing inference targets.
+
+    Returns:
+        targets_in_inf_folder (list of str): List of target folder names found in the directory,
+                                             excluding 'analysis'.
+        runs_in_targets (defaultdict(list)): Dictionary mapping each target to a list of
+                                             its inference run folder names, excluding 'mother_data'.
+    """
     targets_in_inf_folder = list(os.listdir(inferences_path))
 
     if "analysis" in targets_in_inf_folder:

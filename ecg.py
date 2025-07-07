@@ -7,12 +7,12 @@ import matplotlib.pyplot as plt
 def ten_electrodes_to_twelve_leads(electrodes):
     """ Converts 10 electrode signals into a 12-lead ECG
 
-        Args:
-            electrodes (list of arrays of floats): 10 electrode signals in order [LA, RA, LL, RL, V1, V2, V3, V4, V5, V6]
+    Args:
+        electrodes (list of arrays of floats): 10 electrode signals in order [LA, RA, LL, RL, V1, V2, V3, V4, V5, V6]
 
-        Returns:
-            leads (dict): A dictionary containing the computed 12-lead ECG signals with keys:
-                  "I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"
+    Returns:
+        leads (dict): A dictionary containing the computed 12-lead ECG signals with keys:
+              "I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"
     """
 
     n_electrodes = len(electrodes)
@@ -293,6 +293,27 @@ def match_sim_and_target_times(times_sim_s, times_target_s):
 
 def plot_ecg(all_times_s, all_leads, colors=None, labels=None, linestyles=None, axes_off=True, xlims=None, show=True, fig_no=1,
              linewidth=1.5, show_zero=False, title=False, all_not_to_plot=None, text_overlays=None):
+    """Plot ECG signals across 12 standard leads in a 4x3 subplot layout.
+
+    Args:
+        all_times_s (list of arrays): List of time arrays (in seconds), one for each ECG to plot.
+        all_leads (list of dicts): Each dict maps lead names (e.g. "I", "II", "V1", etc.) to corresponding signal arrays.
+        colors (list of str, optional): Line colors for each ECG. Defaults to black.
+        labels (list, optional): Labels for each ECG (used in legend).
+        linestyles (list of str, optional): Line styles for each ECG. Defaults to solid lines.
+        axes_off (bool, optional): Whether to hide axis lines, ticks, and labels. Default is True.
+        xlims (tuple, optional): Tuple of (xmin, xmax) to set x-axis limits for all subplots.
+        show (bool, optional): Whether to call `plt.show()` to display the plot. Default is True.
+        fig_no (int, optional): Figure number to use for the plot. Default is 1.
+        linewidth (float, optional): Width of the ECG plot lines. Default is 1.5.
+        show_zero (bool, optional): Whether to draw a horizontal zero line on each subplot.
+        title (str or bool, optional): Optional figure-wide title. Set to string to show, or False to skip.
+        all_not_to_plot (list of lists, optional): Each sublist contains lead names not to plot for a given ECG.
+        text_overlays (list of str, optional): Text strings to overlay on each subplot (one per lead).
+
+    Returns:
+        None
+    """
     plt.close(fig_no)
 
     n_ecgs = len(all_leads)
@@ -314,7 +335,7 @@ def plot_ecg(all_times_s, all_leads, colors=None, labels=None, linestyles=None, 
 
     width_px = 850
     height_px = 750
-    dpi = 100  # TODO Should be 300 for publication
+    dpi = 100
     width_in = width_px / dpi
     height_in = height_px / dpi
 
@@ -360,8 +381,6 @@ def plot_ecg(all_times_s, all_leads, colors=None, labels=None, linestyles=None, 
                 ax.set_xlim(xlims)
 
     axes[0].legend(prop = {"size": 7})
-
-    #plt.tight_layout()
 
     if show:
         plt.show()
