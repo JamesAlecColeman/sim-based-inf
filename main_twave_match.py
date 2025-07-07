@@ -245,12 +245,6 @@ def main():
     # Preprocess parts of smoothing
     x_i, y_i, z_i, vms_grid, dx, smoothed_mask = preprocessing_gaussian_smoothing_fourier(xs, ys, zs, sigma_um)
 
-    print(f"This parameterisation has {n_segments} APD segments. {sigma_um=}")
-
-
-    # TODO: mutations among APD, APD ranges should be based probably on JT interval
-    # Prepare initial segmental APDs
-    # TODO: sanity check if these ranges are in AP table
     possible_apd90s_ms = np.arange(min_possible_apd90_ms, max_possible_apd90_ms + 1, apd90_snapping_ms, dtype=np.int16)
     current_iter_params = {}
     params_included_already = set()
@@ -264,7 +258,6 @@ def main():
             # Try adding uniform APDs among cells
             apd90_init_everywhere = random.choice(possible_apd90s_ms)
             apd90s_ms = np.ones(n_cells, dtype=np.int16) * apd90_init_everywhere
-            # TODO: note that tuple storage will remove the np.int16 type...
             params_dict_tup = {"apd90s_ms": tuple(apd90s_ms), "ap_shape_param": ap_shape_param_init}
             params_arr = {"apd90s_ms": apd90s_ms, "ap_shape_param": ap_shape_param_init}
             # dicts are not hashable so we must use the frozenset form to store them
@@ -307,7 +300,6 @@ def main():
                 raise Exception("Failed to initialise APDs with unique segmental APD distribution")
 
     if use_best_guess:
-        # TODO need to use the actual AP shape param identified too (this is just for plots)
         n_tries = 1
         plot = 1
         n_iterations = 1
@@ -322,7 +314,6 @@ def main():
     if not use_best_guess and len(params_included_already) != n_tries:
         raise Exception(f"Initial number of unique APD parameter sets {len(params_included_already)} != {n_tries=}")
 
-    # TODO is it actually possible that the APD can increase even though potentials were smoothed?
     activation_times_s = np.round(activation_times_s / ap_time_res_s) * ap_time_res_s
 
     print(f"{ap_time_res_s=}")
@@ -424,9 +415,6 @@ def main():
 
         for i_try in tries:
             leads_twave_sim = ecg.ten_electrodes_to_twelve_leads(all_electrodes[i_try])
-
-            # TODO: don't need to process the target leads/times every time
-            # TODO can we batch the diff score computation so the subprocesses do it instead?
             population_diff_scores[i_try], times_target_subset_s, all_leads_sim[
                 i_try], target_full_ecg_leads_normed = twm.get_diff_score(times_repol_s, leads_twave_sim, times_target_s,
                                                                       leads_target, leads_qrs_sim, times_activation_s)
@@ -446,15 +434,8 @@ def main():
                 store_repol_times_ms = np.round(np.array(all_repol_times[i_try]) * 1000)  # s to ms
                 store_repol_times_ms = np.array(store_repol_times_ms, dtype=np.uint16)
 
-            # TODO make a different thing to store [population_diff_scores[i_try], all_leads_sim[i_try], store_activation_times, iter_no]
-            # TODO to store the leads and repol times. note times_s needs moving to init
-
-
-
             param_id = twm.hash_twave_param(twave_param)
             all_ids_and_diff_scores[param_id] = [population_diff_scores[i_try], iter_no, population_reg_scores[i_try]]
-
-            # TODO check the format of twave_param["apd90s_ms"]
 
             ids_and_ecgs_rts_params[param_id] = [all_leads_sim[i_try], store_repol_times_ms, twave_param]
             all_ids_and_grad_norms[param_id] = all_mean_mean_grad_norms[i_try]
@@ -493,11 +474,9 @@ def main():
         print(t_hash, "was spent on hashing")
         t1 = time.time()
         print("Retrieval time", t1 - t0)
-
         print(f"Number of population diff scores: {len(population_diff_scores)}")
 
         # Find the keys with scores less than or equal to the n th percentile value
-
         t0_scoring = time.time()
         scores = list(population_diff_scores.values())  # T wave discrepancy scores
         regularised_scores = list(population_reg_scores.values())
@@ -552,7 +531,6 @@ def main():
         best_apd90s_ms = best_reg_params["apd90s_ms"]
         best_apd50s_ms = np.empty(n_cells)
 
-        best_apd50_seg_params_ms = []
         best_ap_shape_param = best_reg_params["ap_shape_param"]
 
         for i, apd90 in enumerate(best_apd90s_ms):
@@ -573,22 +551,6 @@ def main():
                 alg_utils.save_alg_mesh(f"{run_dir}/{fast_download_folder}/best_reg_params_{iter_no}.alg", alg)
                 np.save(f"{run_dir}/{fast_download_folder}/best_leads_{iter_no}.npy", best_leads)
 
-
-            """
-            # This isn't really a fast thing (and is easy to do from the params we already store in the log)
-            # Store all population params in the alg
-            pop_params_list = list(population_params.values())
-            alg = alg[:6]
-            for pop_param in pop_params_list:
-                apd90_field = em.params_to_alg_field(pop_param["apd90_seg_params_ms"], all_seg_idxs, n_cells)
-                alg.append(apd90_field)
-            alg_utils.save_alg_mesh(f"{run_dir}/pop_params_{iter_no}.alg", alg)"""
-
-        """# Remove previous iteration best params once this one is saved
-        previous_save_iter_no = int(iter_no - log_every_x_iterations)
-        if previous_save_iter_no >= 0:
-            os.remove(f"{run_dir}/best_reg_params_{previous_save_iter_no}.alg")"""
-
         n_uniques = len(all_ids_and_diff_scores)
 
         mean_diff_score = np.mean(scores)
@@ -606,39 +568,6 @@ def main():
 
         print(f"{t1_iter - t0_iter} secs this iter")
 
-        # TODO: at every iteration, I also want to compute an ECG for the average too?
-        # TODO refine activation cutoff and 2 pseudo ecg methods for activn vs. repoln
-        # TODO discrepancy metric dependent on number of time points
-        """# This code helps us convert Cell Data Index in ParaView to a time
-        alg_cell_data = [i + 1 for i in range(len(times_s))]
-        for (i_cell_data, t) in zip(alg_cell_data, times_s):
-            print(f"{i_cell_data} : {t}s")"""
-
-        # TODO: I wonder if we can punish notching/multiple peaks etc?
-
-        """# Find the top 10 keys with the minimum scores (sorted in ascending order)
-        top_10_min_keys = [population_params[i_try] for i_try, score in sorted(population_diff_scores.items(), key=lambda item: item[1])[:10]]
-
-        # Log 10 best APD params per iteration
-        alg = alg[:6]
-        for key in top_10_min_keys:
-            # TODO: post-smoothing APD field?
-            # Construct the APD field based on the parameters
-            apd_field_ms = np.empty(n_cells)
-            apd_in_segs_ms = key
-            for i_seg, seg_id in enumerate(seg_ids):  # Set APD field segmentally
-                apd_field_ms[all_seg_idxs[i_seg]] = apd_in_segs_ms[i_seg]
-            alg.append(apd_field_ms)
-
-            if use_monoalg_apd_field and not segmental_monoalg_apds:
-                alg.append(manually_set_apd[0])
-
-        alg_utils.save_alg_mesh(f"{run_dir}/best_apd_seg_{iter_no}.alg", alg)"""
-
-
-        # TODO: storage requirement to retain -all- ECGs is insane, make ECG logging toggleable, or just save every X iterations
-        # TODO: agreement of average with ground truth APDs too, maybe?
-        # TODO logging function
         if use_best_guess:
             print("All diff scores:", population_diff_scores.values())
 
@@ -651,44 +580,8 @@ def main():
                                    population_ids, population_diff_scores, ids_and_ecgs_rts_params,
                                    population_reg_scores)
     if plot:
-
         # Simulated and target plot
         ecg.plot_ecg([times_s, times_target_s], [all_leads_sim[0], target_full_ecg_leads_normed], colors=["red", "black"], labels=["Inferred", "Target"])
-
-        # Simulated-only plot
-        #em.plot_ecg([times_s], [all_leads_sim[0]], colors=["red"], labels=["Inferred"])
-
-
-        """# Plots of ECGs
-        fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(4.5, 6.5))
-        axes = axes.flatten()
-        for i, ax in enumerate(axes):
-            lead_name = lead_names[i]
-
-            ax.plot(times_s, all_leads_sim[0][lead_name], color="red")
-            ax.plot(times_target_s, target_full_ecg_leads_normed[lead_name], color="black")
-
-            ax.set_title(lead_names[i])
-        plt.tight_layout()
-        plt.show()"""
-
-    # all_params_and_grad_norms
-    print("Iterations completed :)")
-
-    thenorms = []
-    theparams = []
-    params_stddev = []
-
-    # TODO can try squaring the gradnorms too to punish large gradients even more
-    for ids, norm in all_ids_and_grad_norms.items():
-        thenorms.append(norm)
-
-
-    """plt.scatter(params_stddev, np.array(thenorms))
-    plt.xlabel("Std deviation of APD params in")
-    plt.ylabel("Average potential gradient norms")
-    print(f"{len(params_stddev)=}")
-    plt.show()"""
 
 
 if __name__ == '__main__':
