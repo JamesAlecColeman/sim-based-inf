@@ -25,7 +25,7 @@ from scipy.sparse.csgraph import dijkstra
 def main():
     runtime_start = time.time()
 
-    if running_on_arc:
+    if running_on_arc:  # Remote ARC run
         parser = argparse.ArgumentParser()
         parser.add_argument('--benchmark_id', type=str, help='benchmark_id', required=True)
         parser.add_argument('--lambda_reg', type=str, help='lambda_reg', required=True)
@@ -46,18 +46,16 @@ def main():
         bench_type = benchmark_id.split("_")[2]
         save_best_every_x = 200
 
-    else:
+    else:  # Local run
         import addcopyfighandler
         main_dir = "C:/Users/jammanadmin/Documents/sim-based-inf-data"
         patient_id, bench_dx = "DTI1241", 500
         bench_type = "hcmbig"
         benchmark_id = f"{patient_id}_{bench_dx}_{bench_type}"
-
         seg_name = "rvseg"
         n_tries = 128
-        lambda_reg = 281.0 #187.9  # 0 is equivalent to turning off the regularisation term
+        lambda_reg = 281.0
         n_processors = 8
-
         inferences_folder = "Inferences_twave_local"
         save_best_every_x = 1
 
@@ -66,29 +64,21 @@ def main():
     no_seg_dir = f"{main_dir}/no_segments"
     run_id = f"reg_{lambda_reg}_{seg_name}_{n_tries}_2daptable_moretrans"
     perform_logging = True
-    #n_tries, n_iterations, percent_cutoff = 8, 100, 50  # 87.5  # % accepted per iteration
-    n_iterations, percent_cutoff = 1000000, 87.5  # 87.5  # % accepted per iteration
+    n_iterations, percent_cutoff = 1000000, 87.5
     activation_start_s = 0.000
-    iter_dt_activation_s, iter_dt_repol_s = 0.002, 0.010  # editedit todo 0.010
+    iter_dt_activation_s, iter_dt_repol_s = 0.002, 0.010
     use_best_guess, use_monoalg_apd_field, segmental_monoalg_apds = 0, 0, 0
-    use_monoalg_activation = 0
     use_clustered_output_params = 0
-    using_monoalg_vms_field = 0
     plot, use_fibers, target_clinical = 0, 0, 0
     log_every_x_iterations = 1  # Must be every iteration to record all unique params, ECGs, RTs
     min_possible_apd90_ms, max_possible_apd90_ms, apd90_snapping_ms = 200, 400, 1
     mother_data_folder = "mother_data"
     ap_table_name = "ap_table_2d"
-    benchmark_apd_folder = "New_Benchmarks_APDs"
     fast_download_folder = f"fast_{benchmark_id}"
-    compare_to_benchmark = False
     use_best_inf_folder = "Inferences_no_segments"
 
     if use_best_guess:
         best_params_preload = np.load(f"{main_dir}/{use_best_inf_folder}/analysis/BESTPARAMS_{patient_id}_{bench_dx}_{bench_type}_reg_{lambda_reg}_{seg_name}_1024_2daptable_moretrans.npy", allow_pickle=True).item()
-
-
-    print(f"{benchmark_id=}")
 
     mesh_dir = f"{main_dir}/Meshes_{dx}"
 
@@ -348,10 +338,7 @@ def main():
 
     mutated_params = {}  # Record all params tested and discrepancy
     all_ids_and_diff_scores = {}
-
     all_ids_and_grad_norms = {}
-
-    ids_and_ecgs_rts_params = {}
 
     runtimes = []
 
