@@ -2,13 +2,11 @@ import os
 import utils
 import numpy as np
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 def get_max_i_iter(benchmark_run_dir, prefix = "all_params_and_diff_scores"):
 
     filenames = [f for f in os.listdir(benchmark_run_dir) if f.startswith(prefix)]
-    print(f"{benchmark_run_dir=}")
-    print(f"{filenames=}")
-    print(f"{prefix=}")
 
     # In case we find 2 all_params_and_diff_scores (run ended mid-save)
     possible_iters = []
@@ -46,7 +44,6 @@ def get_scores(benchmark_run_dir, i_iter, i_population_name="population_params_a
         pop_reg_scores = pop_diff_scores
 
     i_tries = sorted(pop_params)#list(pop_params.keys())  # Keys in pop_params and pop_diff_scores dicts
-    #i_tries.sort()
 
     pop_params_list, pop_diff_scores_list, pop_reg_scores_list = [], [], []
 
@@ -54,11 +51,6 @@ def get_scores(benchmark_run_dir, i_iter, i_population_name="population_params_a
         pop_params_list.append(pop_params[i_try])
         pop_diff_scores_list.append(pop_diff_scores[i_try])
         pop_reg_scores_list.append(pop_reg_scores[i_try])
-
-    """pop_params_list = [pop_params[i_try] for i_try in i_tries]
-    pop_diff_scores_list = [pop_diff_scores[i_try] for i_try in i_tries]
-    pop_reg_scores_list = [pop_reg_scores[i_try] for i_try in i_tries]"""
-
 
     min_diff_score = np.min(pop_diff_scores_list)
     i_min_diff_score = np.argmin(pop_diff_scores_list)
@@ -98,15 +90,10 @@ def apply_stop_condition(benchmark_run_dir, iterations, window_size=50, twave_di
             plt.axhline(abs_thresh, color="red")
             plt.show()
 
-        #print(f"{min(np.abs(moving_avg))=}")
         print(f"Minimum absolute moving average {min(np.abs(moving_avg)):.15f}")
 
-        #print(moving_avg)
-
-        if len(below_threshold_indices) == len(moving_avg):
-
+        if len(below_threshold_indices) == 0:
             raise Exception("Has not converged based on this threshold")
-
 
         i_iter_final = min(below_threshold_indices)
     else:
@@ -119,3 +106,74 @@ def apply_stop_condition(benchmark_run_dir, iterations, window_size=50, twave_di
     min_diff_score, median_diff_score, best_params_diff, min_reg_score, median_reg_score, best_params_reg = get_scores(benchmark_run_dir, i_iter_final, i_population_name=i_population_name, repol=repol)
 
     return int(i_iter_final), min_diff_score, median_diff_score, best_params_reg, min_reg_score, median_reg_score, abs_moving_avg
+
+
+def ids_to_storage_iter_nos(pop_ids, all_ids_and_diff_scores):
+    # Find which iterations we must load to retrieve ECGs and AT/RTs for the current population ids
+    iter_nos_to_pop_ids = defaultdict(list)  # dict {iter_no: [params1, params2, ...]}
+    for id in pop_ids:
+        iter_where_stored = all_ids_and_diff_scores[id][1]
+        iter_nos_to_pop_ids[iter_where_stored].append(id)
+    return iter_nos_to_pop_ids
+
+
+def get_best_x_rts_or_ats(run_dir, iter_no, x_best_indices, all_ids_and_diff_scores, repol=True):
+    # pop_ids_and_diff_scores = [population_ids, population_diff_scores, population_reg_scores, population_params]
+    pop_ids_and_diff_scores = np.load(f"{run_dir}/pop_ids_and_diffs/population_ids_and_diff_scores_{iter_no}.npy",
+                                      allow_pickle=True)
+
+    if repol:  # Use regularised scores
+        pop_reg_scores = pop_ids_and_diff_scores[2]
+    else:  # Use diffs
+        pop_reg_scores = pop_ids_and_diff_scores[1]
+
+    pop_ids = pop_ids_and_diff_scores[0]
+    # pop_ids and pop_reg_scores are dicts like {i_try: id} so convert to arrays
+    pop_ids, pop_reg_scores = np.array(list(pop_ids.values())), np.array(list(pop_reg_scores.values()))
+
+    # Get indices of the x best scores
+    best_x_indices = np.argsort(pop_reg_scores)[:x_best_indices]
+    best_x_ids = pop_ids[best_x_indices]
+    best_x_reg_scores = pop_reg_scores[best_x_indices]
+
+    # Finding iter nos of where RTs and ECGs saved of best x ids
+    iter_nos_to_pop_ids = ids_to_storage_iter_nos(best_x_ids, all_ids_and_diff_scores)
+
+    # Load RTs of the best x ids from where they were saved before
+    best_x_ids_to_rts, best_x_ids_to_params, best_x_ids_to_leads = {}, {}, {}
+
+    for iter_no2, ids in iter_nos_to_pop_ids.items():
+        ids_and_rts_and_ecgs_temp = np.load(f"{run_dir}/ids_and_rts_and_ecgs_{iter_no2}.npy",
+                                            allow_pickle=True).item()
+
+        for id in ids:
+            best_x_ids_to_leads[id] = ids_and_rts_and_ecgs_temp[id][0]
+            best_x_ids_to_rts[id] = ids_and_rts_and_ecgs_temp[id][1]
+            best_x_ids_to_params[id] = ids_and_rts_and_ecgs_temp[id][2]
+
+    best_x_rts = [best_x_ids_to_rts[id] for id in best_x_ids]
+    best_x_leads = [best_x_ids_to_leads[id] for id in best_x_ids]
+
+    return best_x_rts, best_x_reg_scores, best_x_leads
+
+
+def find_inference_runs(inferences_path):
+    # Detects the targets e.g. "DTI003_500_ctrl"
+    targets_in_inf_folder = list(os.listdir(inferences_path))
+
+    if "analysis" in targets_in_inf_folder:
+        targets_in_inf_folder.remove("analysis")
+
+    # Detects inference runs for each target e.g. "DTI003_500_ctrl/runtime_512_-10.0"
+    runs_in_targets = defaultdict(list)
+    for target in targets_in_inf_folder:
+        target_folder_path = f"{inferences_path}/{target}"
+        target_folder_dir = list(os.listdir(target_folder_path))
+
+        if "mother_data" in target_folder_dir:
+            target_folder_dir.remove("mother_data")
+
+        if len(target_folder_dir):
+            runs_in_targets[target] = target_folder_dir
+
+    return targets_in_inf_folder, runs_in_targets

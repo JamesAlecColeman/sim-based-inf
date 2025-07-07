@@ -2,10 +2,17 @@ import numpy as np
 import utils
 import os
 
-def read_alg_mesh(filename):
-    """ Loads alg file of form x, y, z, dx, dy, dz, fields, ...
-        Note geometry stored as int as geometry assumed to be round numbers """
-    with open(filename, 'r') as alg_file:
+
+def read_alg_mesh(file_path):
+    """ Loads alg file of form x, y, z, dx, dy, dz, fields, note geometry values all ints
+
+    Args:
+        file_path (string): path to .alg file to load
+
+    Returns:
+        alg (list of arrays): alg in format [xs, ys, zs, dxs, dys, zs, fields1, ...]
+    """
+    with open(file_path, 'r') as alg_file:
         # Initialise alg list structure
         first_line = alg_file.readline()
         fields = [f.strip() for f in first_line.split(",")]
@@ -33,17 +40,26 @@ def read_alg_mesh(filename):
 
 
 def unpack_alg_geometry(alg):
-    """ Get mesh cells from alg
+    """ Get mesh cell coords and dxs from the loaded alg
 
-        Parameters:
-        alg (list of arrays of floats): mesh cell centres and half-edge lengths [xs, ys, zs, lxs, lys, lzs, ...]
+    Args:
+        alg (list of arrays): alg in format [xs, ys, zs, dxs, dys, zs, fields1, ...]
 
-        Returns:
-        xs, ys, zs, lxs, lys, lzs (arrays of floats) """
+    Returns:
+        xs, ys, zs, dxs, dys, dzs (tuple of arrays)
+    """
     return alg[0], alg[1], alg[2], alg[3], alg[4], alg[5]
 
 
 def get_dx(xs):
+    """ Compute dx from xs
+
+    Args:
+        xs (array): mesh coordinates along one axis
+
+    Returns:
+        dx (int): spatial discretisation along this axis
+    """
     if not len(xs):
         raise Exception(f"{xs=} cannot calculate dx")
     dx = np.unique(np.diff(np.sort(np.unique(xs))))[0]
@@ -51,7 +67,16 @@ def get_dx(xs):
 
 
 def alg_from_xs(xs, ys, zs, fields=None, dx=None):
-    """ Converts xs, ys, zs into alg list for convenience """
+    """ Convert xs, ys, zs to alg list
+
+    Args:
+        xs, ys, zs (arrays): mesh coordinates along the 3 axes
+        fields (list of arrays): Optionally include fields in the alg
+        dx (int): Optionally pre-specify dx or it will be computed
+
+    Returns:
+        alg (list of arrays): alg in format [xs, ys, zs, dxs, dys, zs, fields1, ...]
+    """
     if dx is None:
         dx = get_dx(xs)
     lxs = np.array([dx / 2 for _ in range(len(xs))])
@@ -65,15 +90,15 @@ def alg_from_xs(xs, ys, zs, fields=None, dx=None):
 
 
 def make_grid_dictionary(xs, ys, zs, values=None):
-    """ Efficiently store points as dict type, treated as hash map in Python, so it is efficient to see if
-        a point is in the mesh or not. Also easy to check for neighbours as it is in a grid form
+    """ Store mesh coordinates as hash map
 
-        Parameters:
+    Args:
         xs, ys, zs (arrays of floats): coordinates of mesh cell centres
         values (array): optional alternative to using indices as the value stored in dict
 
-        Returns:
-        grid_dict (dict): key (x, y, z) mapped onto original index (OR optionally values) of point in the mesh """
+    Returns:
+        grid_dict (dict): key (x, y, z) mapped onto original index (OR optionally values) of point in the mesh
+    """
 
     if values is None:  # coord : original index
         grid_dict = {(x, y, z): idx for idx, (x, y, z) in enumerate(zip(xs, ys, zs))}
@@ -86,10 +111,9 @@ def make_grid_dictionary(xs, ys, zs, values=None):
 def save_alg_mesh(path, alg, remove_old=True):
     """ Save alg with any number of fields to a file.
 
-    Parameters:
+    Args:
         path (str): Path to the file where the mesh data will be saved.
-        alg (list of arrays): List where each array represents a field (e.g., coordinates, dimensions, and
-        miscellaneous data).
+        alg (list of arrays): alg in format [xs, ys, zs, dxs, dys, zs, fields1, ...]
         remove_old (bool): Flag to indicate if an existing file should be removed before saving.
     """
 
@@ -106,9 +130,9 @@ def save_alg_mesh(path, alg, remove_old=True):
             print(f"Alg field {i} casted to numpy array")
 
     # Create directory if it does not yet exist
-    dir = os.path.dirname(path)
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+    alg_dir = os.path.dirname(path)
+    if not os.path.exists(alg_dir):
+        os.makedirs(alg_dir)
 
     # Checking if file already exists
     utils.handle_preexisting_path(path, remove_old)
