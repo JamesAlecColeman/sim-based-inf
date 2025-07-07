@@ -8,20 +8,20 @@ import concurrent
 import ecg
 from scipy.sparse import csr_matrix
 
+
 def mesh_subset_with_dist_constraint(alg, dist_limit_um, neighbour_dist_um):
     """ Deterministic sampling of alg cells where sampled points must be > dist_limit_um from all other sample
         points
 
-        Args:
-            alg (list): alg mesh
-            dist_limit_um (float): mesh cells can only be sampled further than dist_limit from all other sampled cells
-            neighbour_dist_um (float): neighbouring cells of sampled cells are stored as neighbours within this distance
+    Args:
+        alg (list): alg mesh
+        dist_limit_um (float): mesh cells can only be sampled further than dist_limit from all other sampled cells
+        neighbour_dist_um (float): neighbouring cells of sampled cells are stored as neighbours within this distance
 
-        Returns:
-            points_subset (list of float tuples): sampled points [(x0, y0, z0), (x1, y1, z1), ...]
-            points_neighbours (dict): neighbours of points_subset stored as key (x, y, z): [(x0, y0, z0), ...]
+    Returns:
+        points_subset (list of float tuples): sampled points [(x0, y0, z0), (x1, y1, z1), ...]
+        points_neighbours (dict): neighbours of points_subset stored as key (x, y, z): [(x0, y0, z0), ...]
     """
-    # TODO: KD-trees reimplementation
     xs, ys, zs, *_ = alg_utils.unpack_alg_geometry(alg)
     grid_coarse = {}
     neighbours = np.concatenate((np.array([(0, 0, 0)]), NEIGHBOURS_26))  # Include same cell at origin
@@ -133,7 +133,6 @@ def init_roots_and_vels(n_tries, min_n_root_nodes, max_n_root_nodes, candidate_r
         root_indices_mesh = []
 
         for _ in range(n_root_nodes):  # Select n random root nodes from candidate_root_node_indices
-            # TODO handling of duplicate root node indices
             rand_candidate_idx = random.randint(0, len(candidate_root_node_indices) - 1)
             root_indices_mesh.append(candidate_root_node_indices[rand_candidate_idx])
 
@@ -210,6 +209,7 @@ def hash_qrs_param(params):
     hash_object = hashlib.md5(param_str.encode())
     return hash_object.hexdigest()[:8]
 
+
 def mutate_activation_params(params, alg, grid_dict, candidate_root_node_indices, candidate_root_neighbours,
                              v_endos_cm_per_s, v_myos_cm_per_s, n_random_mutations=2, p_exploration=0.3,
                              p_velocity=0.3):
@@ -230,7 +230,6 @@ def mutate_activation_params(params, alg, grid_dict, candidate_root_node_indices
    Returns:
        params (tuple tuple): mutated activation model params (v_endo_param, v_myo_param), (root_idx1, ...)
     """
-    # TODO: refine conduction velocity mutations to specify custom step sizes / Gaussian jumps
     xs, ys, zs, *_ = alg_utils.unpack_alg_geometry(alg)
     v_params, root_indices = params
     new_v_params, new_root_indices = v_params, list(root_indices).copy()
@@ -336,8 +335,15 @@ def mutate_population_activation_params(worse_keys, better_keys, all_params, alg
 
 
 def get_activation_times(root_indices, all_time_matrix):
-    """ Get time matrix of the specific root_indices in this example from the all_time_matrix which has times
-        for all candidate root nodes, to set up overall activation times for your activation model """
+    """Get activation times from time matrix using selected root node indices
+
+    Args:
+        root_indices (list of int): Indices of root nodes to use for activation
+        all_time_matrix (ndarray): Time-to-arrival matrix (ms) for all candidate root nodes
+
+    Returns:
+        activation_times_s (ndarray): ventricular activation times using these root nodes
+    """
     time_matrix = np.vstack([all_time_matrix[root_index] for root_index in root_indices])
     activation_times_s = np.min(time_matrix, axis=0) / 1000  # Convert milliseconds to seconds
     return activation_times_s
@@ -345,7 +351,22 @@ def get_activation_times(root_indices, all_time_matrix):
 
 def pseudo_ecg_qrs(times_s, ap_function, electrodes_xyz, elec_grads, dx, activation_cutoff_s, neighbour_arrays,
                    v_params, activation_times_s):
-    # TODO: re-evaluation of activation optimisation vs. no optimisation with vectorisation
+    """ Pseudo ECG calculation for activation only
+
+    Args:
+        times_s (ndarray): 1D array of time points (s)
+        ap_function (callable): Function that returns Vm array at a given time and activation map
+        electrodes_xyz (ndarray): Coordinates of electrodes, shape (n_elec, 3)
+        elec_grads (ndarray): Precomputed ∇(1/r) gradients from electrodes to each cell, shape (3, n_elec, n_cells)
+        dx (float): Spatial discretisation
+        activation_cutoff_s (float): Time until which activation-time-based gradient computation is allowed
+        neighbour_arrays (dict): Mesh structural information precomputed
+        v_params (list or None): Conduction velocity parameters (if provided, enables optimisation logic)
+        activation_times_s (ndarray): Activation times for each cell (s)
+
+    Returns:
+        electrodes_vs (ndarray): Pseudo-ECG signals at each electrode over time, shape (n_elec, len(times_s))
+    """
     n_elec = len(electrodes_xyz)
 
     if v_params is not None:
@@ -415,7 +436,24 @@ def action_potential_heaviside(t, activation_time):
 
 def compute_batch_ecgs_qrs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads, dx, activation_cutoff_s,
                        neighbour_arrays, batch_indices, batch_v_params, batch_activation_times_s):
+    """ Compute QRS pseudo-ECGs for a single batch of activation models.
 
+    Args:
+        pseudo_ecg_function (function): Function to compute ECG (e.g. pseudo_ecg_qrs).
+        times_s (np.ndarray): Time points in seconds.
+        ap_function (function): Function describing Vm(t), usually just step function for activation
+        electrodes_xyz (np.ndarray): Shape (n_electrodes, 3), electrode positions
+        elec_grads (np.ndarray): Shape (3, n_electrodes, n_cells), precomputed ∇(1/r) from each electrode to cell
+        dx (float): Cell spacing in microns
+        activation_cutoff_s (float): Time cutoff for 'activation phase'
+        neighbour_arrays (dict): Precomputed mesh structural info
+        batch_indices (list[int]): Indices of the current batch being processed.
+        batch_v_params (dict[int, tuple]): Conduction velocities for each i_try in batch
+        batch_activation_times_s (dict[int, np.ndarray]): Activation times (s) for each i_try in batch
+
+    Returns:
+        dict[int, np.ndarray]: Keys are i_try, values are ECG arrays of shape (n_electrodes, n_timepoints).
+    """
     batch_electrodes = {}
 
     for i_try in batch_indices:
@@ -428,7 +466,27 @@ def compute_batch_ecgs_qrs(pseudo_ecg_function, times_s, ap_function, electrodes
 def batch_ecg_runner_qrs(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads,
                      dx, activation_cutoff_s, neighbour_arrays, all_all_time_matrices, qrs_params=None,
                      all_activation_times_s=None):
+    """ Computes pseudo-ECGs for a population of activation models by parallelising across many batches
 
+    Args:
+        n_tries (int): Total number of models to compute ECGs for.
+        n_per_batch (int): Number of models per parallel batch.
+        pseudo_ecg_function (function): Function to compute pseudo-ECG from Vms
+        times_s (np.ndarray): Time points (in seconds).
+        ap_function (function): Vm(t), typically step function for activation
+        electrodes_xyz (np.ndarray): Shape (n_electrodes, 3), electrode spatial positions.
+        elec_grads (np.ndarray): Shape (3, n_electrodes, n_cells), ∇(1/r) values.
+        dx (float): Spatial resolution of the mesh in microns.
+        activation_cutoff_s (float): Time cutoff for 'activation phase'
+        neighbour_arrays (dict): Precomputed mesh structural info
+        all_all_time_matrices (dict): Precomputed general activation times (across possible root nodes, v_params)
+        qrs_params (dict[int, tuple], optional): Maps i_try to (v_params, root_indices) tuples.
+        all_activation_times_s (dict[int, np.ndarray], optional): Precomputed activation times if available
+
+    Returns:
+        all_electrodes (dict[int, np.ndarray]): ECG signals, one per i_try, shape (n_electrodes, n_timepoints).
+        record_activation_times_s (dict[int, np.ndarray]): Activation times (s) per i_try.
+    """
     all_electrodes = {}
     batches = [range(i, min(i + n_per_batch, n_tries)) for i in range(0, n_tries, n_per_batch)]
     batched_v_params = [{} for _ in range(len(batches))]
@@ -436,12 +494,9 @@ def batch_ecg_runner_qrs(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_
 
     record_activation_times_s = {}
 
-    print("Into batch ECG runner")
-
     # Precompute all activation times rather than pass in all_time_matrix to each subprocess
     for i, batch in enumerate(batches):
         for i_try in batch:
-
             if all_activation_times_s is not None:  # Then just use input activation times
                 batched_activation_times_s[i][i_try] = all_activation_times_s[i_try]
             else:
@@ -468,7 +523,6 @@ def batch_ecg_runner_qrs(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_
 
     # Batch multiprocess parallel execution of activation times and pseudo ECG computation
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        # TODO consider using shared memory space because passing all structural data into workers is intensive
         futures = [executor.submit(compute_batch_ecgs_qrs, pseudo_ecg_function, times_s, ap_function,
                                    electrodes_xyz, elec_grads, dx, activation_cutoff_s, neighbour_arrays, batch,
                                    batch_v_params, batch_activation_times_s)
@@ -486,14 +540,14 @@ def analyse_pseudo_electrodes_qrs(all_electrodes, target_leads,
                                   compare_with_target=True, lead_names_to_compare=None):
     """ Rescales simulated QRS and compares to target QRS
 
-        Args:
-            all_electrodes (dict): {i_try: [LA, RA, LL, RL, V1, V2, V3, V4, V5, V6], ...}
-            target_leads (dict): {lead_name: signal, ...}
-            compare_with_target (bool): computes difference score to target if True
+    Args:
+        all_electrodes (dict): {i_try: [LA, RA, LL, RL, V1, V2, V3, V4, V5, V6], ...}
+        target_leads (dict): {lead_name: signal, ...}
+        compare_with_target (bool): computes difference score to target if True
 
-        Returns:
-            lead_diffs (dict): {lead_name: mean per-sample difference between a and b}
-        """
+    Returns:
+        lead_diffs (dict): {lead_name: mean per-sample difference between a and b}
+    """
     all_normed_leads_pseudo, all_diff_scores, all_leads_sim = {}, {}, {}
 
     for key, electrodes in all_electrodes.items():
@@ -550,7 +604,15 @@ def measure_similarity_qrs(leads_a, leads_b, lead_names_to_compare=None):
 
 
 def find_optimal_scaling(leads_a, leads_b):
-    # Optimal scaling for leads_a to be comparable to leads_b
+    """Compute optimal scaling factor to best match leads_a to leads_b
+
+    Args:
+        leads_a (dict): Dictionary of lead signals to be scaled, each value is a 1D numpy array.
+        leads_b (dict): Dictionary of reference lead signals to match against, same structure as leads_a.
+
+    Returns:
+        float: Optimal scalar alpha such that alpha * leads_a ≈ leads_b
+    """
     leads_a_signal = np.concatenate([leads_a[lead] for lead in leads_a])
     leads_b_signal = np.concatenate([leads_b[lead] for lead in leads_b])
     numerator = np.sum(leads_a_signal * leads_b_signal)
