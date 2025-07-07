@@ -6,11 +6,8 @@ if running_on_arc:
     scripts_dir = "Your ARC Python directory here"
     sys.path.append(scripts_dir)
 
-import numpy as np
-import matplotlib.pyplot as plt
 import time
 import alg_utils
-from scipy.sparse.csgraph import dijkstra
 import os
 import cache
 from constants import *
@@ -19,63 +16,12 @@ import argparse
 import qrs_matching as qrsm
 import ecg
 import math
-
-
-def compute_time_matrix_batch(batch_args):
-    """Compute time matrices for a batch of mesh arguments.
-
-        Args:
-            batch_args (list of tuples): Each tuple contains:
-                - v_endo (array-like): endo conduction velocity
-                - v_myo (array-like): myo conduction velocity
-                - adjacency_list_26 (list): Adjacency info for 26-neighbour connectivity.
-                - endo_mask (array-like): endocardial mask
-                - use_fibers (bool): whether to use fiber velocities (not supported)
-                - candidate_root_node_indices (list): Mesh idxs of candidate root nodes.
-
-        Returns:
-            dict: Keys are tuples (v_endo, v_myo), values are dicts mapping mesh index to
-                  time arrays computed from candidate root nodes.
-    """
-    results = {}
-    for args in batch_args:
-        (v_endo, v_myo, adjacency_list_26, endo_mask, use_fibers, candidate_root_node_indices) = args
-        v_fibers, v_sheets, v_normals = v_myo, v_myo, v_myo
-        adj_matrix = qrsm.create_sparse_adjacency_time(
-            adjacency_list_26, v_fibers, v_sheets, v_normals, v_endo, endo_mask, use_fibers
-        )
-        all_time_matrix = dijkstra(adj_matrix, indices=candidate_root_node_indices, return_predecessors=False)
-        times_all_candidate_root_nodes = {
-            mesh_idx: all_time_matrix[i].astype(np.float32)
-            for i, mesh_idx in enumerate(candidate_root_node_indices)
-        }
-        results[(v_endo, v_myo)] = times_all_candidate_root_nodes
-    return results
-
-
-from itertools import islice
-
-def batcher(iterable, batch_size):
-    """Yield successive batches from an iterable.
-
-        Args:
-            iterable (iterable): The data source to be split into batches.
-            batch_size (int): Number of items per batch.
-
-        Yields:
-            list: Next batch of items from the iterable.
-    """
-    it = iter(iterable)
-    while True:
-        batch = list(islice(it, batch_size))
-        if not batch:
-            break
-        yield batch
+import concurrent.futures
 
 
 def main():
     runtime_start = time.time()
-    if running_on_arc:
+    if running_on_arc:  # Setup remote ARC run
         parser = argparse.ArgumentParser()
         parser.add_argument('--benchmark_id', type=str, help='benchmark_id', required=True)
         parser.add_argument('--n_processors', type=str, help='n_processors', required=True)
@@ -90,7 +36,7 @@ def main():
         patient_id = benchmark_id.split("_")[0]
         save_best_every_x = 200
 
-    else:
+    else:  # Setup local run
         import addcopyfighandler
         main_dir = "C:/Users/jammanadmin/Documents/sim-based-inf-data"
         patient_id, bench_dx = "DTI1241", 500
@@ -100,36 +46,29 @@ def main():
         n_processors = 3
         inferences_folder = "Inferences_qrs_local"
         save_best_every_x = 1
+
     ############################################# Key Parameters #######################################################
     run_id = f"sim-based-inf-{n_tries}"
     dx, mesh_type = 2000, ""
     n_iterations, percent_cutoff = 1200, 87.5
     iter_dt_s = 0.002
-    plot, use_fibers, target_clinical, use_best_guess, return_activation_times = 1, 0, 0, 0, 1
+    plot, use_fibers, use_best_guess, return_activation_times = 1, 0, 0, 1
     min_n_root_nodes, max_n_root_nodes, root_nodes_dist_apart_um = 6, 10, 5000
     v_endo_min, v_endo_max, v_endo_diff = 80, 140, 10
     v_myo_min, v_myo_max, v_myo_diff = 20, 90, 10
-
-    log_every_x_iterations = 1
-    output_activation_times_dir = None  # f"{main_dir}/Inferences_Setup/{benchmark_id}/try_new_benches_twave"
-
+    output_activation_times_dir = None
     ############################################# Best params ##########################################################
     params_best_guess = (85, 40), (911, 1092, 1652, 1660, 11504, 13627, 16022, 17508, 18137)
-    params_best_guess = (90, 60), (1478, 3483, 5166, 5791, 6400, 6478, 6713, 7863, 8145, 9189)
-    #params_best_guess = np.load(f"{main_dir}/{inferences_folder}/{benchmark_id}_bestqrsparams.npy", allow_pickle=True)
     params_best_guess = tuple(params_best_guess)
-
     ####################################################################################################################
 
     v_endos = list(range(v_endo_min, v_endo_max + 1, v_endo_diff))
     v_myos = list(range(v_myo_min, v_myo_max + 1, v_myo_diff))
 
-    log_inf_params = {"main_dir": main_dir, "run_id": run_id, "patient_id": patient_id, "dx": dx,
-                      "mesh_type": mesh_type,
+    log_every_x_iterations = 1
+    log_inf_params = {"main_dir": main_dir, "run_id": run_id, "patient_id": patient_id, "dx": dx, "mesh_type": mesh_type,
                       "n_tries": n_tries, "n_iterations": n_iterations, "percent_cutoff": percent_cutoff,
-                      "iter_dt_s": iter_dt_s,
-                      "use_fibers": use_fibers, "target_clinical": target_clinical,
-                      "min_n_root_nodes": min_n_root_nodes,
+                      "iter_dt_s": iter_dt_s, "use_fibers": use_fibers, "min_n_root_nodes": min_n_root_nodes,
                       "max_n_root_nodes": max_n_root_nodes, "root_nodes_dist_apart_um": root_nodes_dist_apart_um,
                       "v_endos": v_endos, "v_myos": v_myos, "n_processors": n_processors,
                       "log_every_x_iterations": log_every_x_iterations}
@@ -146,40 +85,17 @@ def main():
     np.save(f"{run_dir}/running.npy", np.array([1]))
     mother_dir = f"{main_dir}/{inferences_folder}/{benchmark_id}/mother_data"
 
-    if target_clinical:  # Prepare target QRS from clinical data
-        leads_in = np.load(f"{mother_dir}/{patient_id}_leads_subset1.npy", allow_pickle=True).item()
-        lead_names_clinical = list(leads_in.keys())
-
-        leads_target = {}
-        for lead_name in lead_names_clinical:
-
-             xs, ys = leads_in[lead_name]
-             leads_target[lead_name] = ys
-        times_s_clinical = np.round(xs, 6)
-
-        qrs_off_s = max(xs)
-        total_time_s = qrs_off_s
-        times_s = np.round(np.arange(0, total_time_s + iter_dt_s, iter_dt_s), decimals=6)
-        times_s = times_s[times_s <= total_time_s]  # Prevent overstepping beyond total_time_s
-
-        clinical_times_s, leads_clinical = ecg.match_times(times_s_clinical, leads_target, times_s)
-        times_target_s = clinical_times_s
-
-    else:  # Prepare target QRS from simulated data
-        leads_target = np.load(f"{main_dir}/{inferences_folder}/{benchmark_id}/mother_data/leads_selected_qrs.npy", allow_pickle=True).item()
-        lead_names = list(leads_target.keys())
-        times_target_s = leads_target[lead_names[0]][0]
-        leads_target_temp = {name: leads_target[name][1] for name in lead_names}
-        leads_target = leads_target_temp
-
-        qrs_off_s = max(times_target_s)
-        total_time_s = qrs_off_s
-        times_s = np.round(np.arange(0, total_time_s + iter_dt_s, iter_dt_s), decimals=6)
-        times_s = times_s[times_s <= total_time_s]  # Prevent overstepping beyond total_time_s
-
-    t00 = time.time()
+    # Load target QRS and prepare simulation time to match target time
+    leads_target = np.load(f"{main_dir}/{inferences_folder}/{benchmark_id}/mother_data/leads_selected_qrs.npy", allow_pickle=True).item()
+    lead_names = list(leads_target.keys())
+    times_target_s = leads_target[lead_names[0]][0]
+    leads_target_temp = {name: leads_target[name][1] for name in lead_names}
+    leads_target = leads_target_temp
+    qrs_off_s = max(times_target_s)
+    total_time_s = qrs_off_s
+    times_s = np.round(np.arange(0, total_time_s + iter_dt_s, iter_dt_s), decimals=6)
+    times_s = times_s[times_s <= total_time_s]  # Prevent overstepping beyond total_time_s
     lead_names = list(leads_target.keys())  # Define leads by which exist in target ECG
-
 
     # Loading alg mesh and cached geometrical information
     mesh_alg_name = f"{patient_id}_{dx}{mesh_type}.alg"
@@ -209,7 +125,7 @@ def main():
     grid_endo_dict = alg_utils.make_grid_dictionary(xs_endo, ys_endo, zs_endo)
 
     root_nodes_neighbour_dist_um = 2 * root_nodes_dist_apart_um
-    # Set up candidate root node parameter space # TODO: probably scale root_nodes_dist_apart_um constraint by the size of the endocardium
+    # Set up candidate root node parameter space
     candidate_root_points, candidate_root_neighbours = qrsm.mesh_subset_with_dist_constraint(alg_endo,
                                                                                            root_nodes_dist_apart_um,
                                                                                            root_nodes_neighbour_dist_um)
@@ -241,58 +157,32 @@ def main():
     # Used for activation time calculations in dijkstra (need 26 to ensure isotropic propagation is possible)
     adjacency_list_26 = ecg.compute_adjacency_displacement(xs, ys, zs, dx, grid_dict, NEIGHBOURS_26)  # Post-fibers version (displacement vectors for fib projections)
 
-    # Create adjacency time matrices for all v_endo, v_myo parameters
-    all_adjacency_matrices = {}
     v_endos.sort()  # Sort v_params (ascending) as inc/decreasing v mutations relies on this
     v_myos.sort()
-
     v_space = len(v_endos) * len(v_myos)
     print(v_space, "velocity space", flush=True)
 
-    all_all_time_matrices = {}
-
-    # Version where we give all processors an even number of the jobs, parallel adj-dijk
-    t0l=time.time()
-    import concurrent.futures
-
-    param_args = [
-        (v_endo, v_myo, adjacency_list_26, endo_mask, use_fibers, candidate_root_node_indices)
-        for v_endo in v_endos for v_myo in v_myos
-    ]
-
+    # Parallel computation of all_all_time_matrices
+    param_args = [(v_endo, v_myo, adjacency_list_26, endo_mask, use_fibers, candidate_root_node_indices)
+                  for v_endo in v_endos for v_myo in v_myos]
     batch_size = int(math.ceil(v_space / n_processors))
-
-    batched_param_args = list(batcher(param_args, batch_size))
+    batched_param_args = list(qrsm.batcher(param_args, batch_size))
 
     all_all_time_matrices = {}
-
     with concurrent.futures.ProcessPoolExecutor(max_workers=n_processors) as executor:
-        results = executor.map(compute_time_matrix_batch, batched_param_args)
+        results = executor.map(qrsm.compute_time_matrix_batch, batched_param_args)
         for batch_result in results:
             all_all_time_matrices.update(batch_result)
-
-    t0m = time.time()
-
-    print(t0m - t0l, "nowww")
-
-
-    all_adjacency_matrices = None  # Clean memory
 
     # Extract subset of target lead at points closely matching simulated lead time
     target_qrs_idxs = ecg.match_sim_and_target_times(times_s, times_target_s)
     target_leads_qrs = {name: leads_target[name][target_qrs_idxs] for name in lead_names}
-    # Compute QRS amplitudes for each lead
-    # TODO consider if calculating QRS amp based on sparse time points determiend by simulation times_s is a good idea
+    # Compute QRS amplitudes for each target lead then normalise them
     target_qrs_amps = {name: np.max(target_leads_qrs[name]) - np.min(target_leads_qrs[name]) for name in lead_names}
-    # Normalise by QRS amplitude in each lead
     target_leads_qrs_normed = {name: target_leads_qrs[name] / target_qrs_amps[name] for name in lead_names}
 
     print(f"Max QRS time simulated: {max(times_s) * 1000}ms", flush=True)
     print(len(candidate_root_points), "root node parameter space", flush=True)
-
-    print(f"{len(times_target_s)=}")
-    print(f"{len(leads_target["I"])=}")
-    print(f"{len(times_s)=}")
 
     log.log_init_qrs(run_dir, log_inf_params, candidate_root_points, candidate_root_node_indices, times_target_s,
                      leads_target, alg, times_s)
@@ -323,23 +213,19 @@ def main():
         # Compute electrode signals for simulations required this iteration
         all_electrodes, activation_times_s, *_ = qrsm.batch_ecg_runner_qrs(n_tries, n_per_batch, qrsm.pseudo_ecg_qrs,
                                                                            times_s, qrsm.action_potential_heaviside,
-                                                                           electrodes_xyz,
-                                                                         elec_grads, dx, activation_cutoff_s,
-                                                                         neighbour_arrays,
-                                                                         qrs_params=current_iter_params,
-                                                                         all_all_time_matrices=all_all_time_matrices)
+                                                                           electrodes_xyz, elec_grads, dx,
+                                                                           activation_cutoff_s, neighbour_arrays,
+                                                                           qrs_params=current_iter_params,
+                                                                           all_all_time_matrices=all_all_time_matrices)
 
         population_ids_check, population_ids, ids_and_ecgs_ats_params = {}, {}, {}
 
         for i_try in tries:
-            # TODO make inverse of this function for the clinical leads?
-            leads_qrs_sim = ecg.ten_electrodes_to_twelve_leads(all_electrodes[i_try])
             # Conversion of params simulated this iteration to ids and record that the param_id is in pop already
             param_id = qrsm.hash_qrs_param(current_iter_params[i_try])
             population_ids[i_try] = param_id
             population_ids_check[param_id] = 1
 
-        # TODO it looks like we were comparing to target_leads_qrs_normed even with our new discrep metric?
         # Compute pseudo ECG leads from electrodes and compare to monoalg ECG leads
         all_normed_leads_pseudo, population_diff_scores, all_leads_sim = qrsm.analyse_pseudo_electrodes_qrs(all_electrodes,
                                                                                        target_leads_qrs_normed, lead_names_to_compare=lead_names_to_compare)
@@ -399,7 +285,6 @@ def main():
             param_id = qrsm.hash_qrs_param((v_params, tuple(root_indices)))
 
             if param_id not in all_ids_and_diff_scores:  # Only simulate unseen params
-                # TODO: note, when we exclude mutations to parameter sets we have seen before, this may be obselete
                 next_iter_params[next_iter_tries_ct] = params
                 next_iter_tries_ct += 1
 
@@ -423,9 +308,6 @@ def main():
             fast_download_folder = f"fast_{benchmark_id}"
             alg_utils.save_alg_mesh(f"{run_dir}/{fast_download_folder}/bestguess_best_params_{iter_no}.alg", alg)
 
-
-        t11 = time.time()
-
         runtime_end = time.time()
         runtime_current_total = runtime_end - runtime_start
         runtimes.append(runtime_current_total)
@@ -435,7 +317,6 @@ def main():
                                        population_params)
 
         print(len(all_ids_and_diff_scores), "Unique parameter sets tested so far", flush=True)
-        print("Runtime so far:", round((t11 - t00) / 60, 1), "minutes", flush=True)
         print("Best Params:", min_key, flush=True)
         print("Min:", min_diff_score, flush=True)
         # End of iteration loop

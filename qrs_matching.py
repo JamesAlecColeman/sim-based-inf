@@ -7,6 +7,8 @@ import math
 import concurrent
 import ecg
 from scipy.sparse import csr_matrix
+from itertools import islice
+from scipy.sparse.csgraph import dijkstra
 
 
 def mesh_subset_with_dist_constraint(alg, dist_limit_um, neighbour_dist_um):
@@ -619,3 +621,54 @@ def find_optimal_scaling(leads_a, leads_b):
     denominator = np.sum(leads_a_signal ** 2)
     alpha = numerator / denominator if denominator != 0 else 0
     return alpha
+
+
+def compute_time_matrix_batch(batch_args):
+    """Compute time matrices for a batch of mesh arguments.
+
+    Args:
+        batch_args (list of tuples): Each tuple contains:
+            - v_endo (array-like): endo conduction velocity
+            - v_myo (array-like): myo conduction velocity
+            - adjacency_list_26 (list): Adjacency info for 26-neighbour connectivity.
+            - endo_mask (array-like): endocardial mask
+            - use_fibers (bool): whether to use fiber velocities (not supported)
+            - candidate_root_node_indices (list): Mesh idxs of candidate root nodes.
+
+    Returns:
+        dict: Keys are tuples (v_endo, v_myo), values are dicts mapping mesh index to
+              time arrays computed from candidate root nodes.
+    """
+    results = {}
+    for args in batch_args:
+        (v_endo, v_myo, adjacency_list_26, endo_mask, use_fibers, candidate_root_node_indices) = args
+        v_fibers, v_sheets, v_normals = v_myo, v_myo, v_myo
+        adj_matrix = create_sparse_adjacency_time(
+            adjacency_list_26, v_fibers, v_sheets, v_normals, v_endo, endo_mask, use_fibers
+        )
+        all_time_matrix = dijkstra(adj_matrix, indices=candidate_root_node_indices, return_predecessors=False)
+        times_all_candidate_root_nodes = {
+            mesh_idx: all_time_matrix[i].astype(np.float32)
+            for i, mesh_idx in enumerate(candidate_root_node_indices)
+        }
+        results[(v_endo, v_myo)] = times_all_candidate_root_nodes
+    return results
+
+
+
+def batcher(iterable, batch_size):
+    """Yield successive batches from an iterable.
+
+    Args:
+        iterable (iterable): The data source to be split into batches.
+        batch_size (int): Number of items per batch.
+
+    Yields:
+        list: Next batch of items from the iterable.
+    """
+    it = iter(iterable)
+    while True:
+        batch = list(islice(it, batch_size))
+        if not batch:
+            break
+        yield batch
