@@ -1,4 +1,3 @@
-
 import sys
 
 running_on_arc = False
@@ -7,9 +6,6 @@ if running_on_arc:
     scripts_dir = "/home/scat8499/monoscription_python/JAC_Py_Scripts"
     sys.path.append(scripts_dir)
 
-import monoalg_output_analysis as moa
-import numpy as np
-import matplotlib.pyplot as plt
 import twave_matching as twm
 import ecg
 import alg_utils
@@ -23,9 +19,7 @@ import time
 import log_inference as log
 import argparse
 import shutil
-import compare_distributions as comp
 from scipy.sparse.csgraph import dijkstra
-import copy
 
 
 def main():
@@ -134,8 +128,7 @@ def main():
     else:
         # Prepare dijkstra neighbourhoods for all points
         grid_dict = alg_utils.make_grid_dictionary(xs, ys, zs)
-        adjacency_list_26 = ecg.compute_adjacency_displacement(xs, ys, zs, dx, grid_dict,
-                                                              NEIGHBOURS_26)  # Post-fibers version (displacement vectors for fib projections)
+        adjacency_list_26 = ecg.compute_adjacency_displacement(xs, ys, zs, dx, grid_dict, NEIGHBOURS_26)
         adjacency_matrix = twm.create_sparse_adjacency_distance(adjacency_list_26)
         all_dijk_dists_cm = dijkstra(adjacency_matrix, return_predecessors=False)  # Distances in cm
         np.save(dijk_dist_path, all_dijk_dists_cm)

@@ -11,15 +11,25 @@ import random
 from constants import *
 import ecg
 
-def create_sparse_adjacency_distance(adjacency_list):
 
+def create_sparse_adjacency_distance(adjacency_list):
+    """ Create a sparse adjacency matrix of distances between neighbouring mesh cells.
+
+    Args:
+        adjacency_list (dict): Dictionary mapping cell indices to lists of
+                               (neighbour_index, displacement_vector) tuples.
+                               Displacement is in micrometres (um).
+
+    Returns:
+        scipy.sparse.csr_matrix: Sparse matrix (n_cells x n_cells) with entries in centimetres (cm)
+                                 representing Euclidean distances between connected neighbours.
+    """
     row_indices, col_indices, data = [], [], []
     um_to_cm = 1e-4
     n_cells = len(adjacency_list)
 
     for idx, neighbors in adjacency_list.items():
         for neighbour_idx, displacement in neighbors:
-
             distance_um = np.linalg.norm(displacement)
             distance_cm = distance_um * um_to_cm
             row_indices.append(idx)
@@ -29,7 +39,27 @@ def create_sparse_adjacency_distance(adjacency_list):
 
 
 def preprocess_2d_ap_table(ap_table_2d, times_sim_s, every_xth_time):
+    """ Preprocess 2D AP table ready for use in repolarisation ECG fast simulations
 
+    Args:
+        ap_table_2d (dict): Dictionary mapping (APD90, APD50) tuples to tuples of (time_array, V_m_array).
+                            Times are in seconds, Vm in mV.
+        times_sim_s (np.ndarray): Array of simulation times in seconds.
+        every_xth_time (int): Factor to reduce AP time resolution by (e.g. 5 means take every 5th time point).
+
+    Returns:
+        ap_table_arr (np.ndarray): 3D float32 array of shape (n_apd90s, n_apd50s, n_times_ap),
+                                   holding the reduced AP voltage traces.
+        ap_table_rmps (np.ndarray): 2D float32 array of resting membrane potentials for each APD90/APD50 combo.
+        min_apd90 (float): Minimum APD90 value in the table.
+        max_apd90 (float): Maximum APD90 value in the table.
+        min_apd50 (float): Minimum APD50 value in the table.
+        max_apd50 (float): Maximum APD50 value in the table.
+        apd90_step (float): Step size between APD90 values (must be uniform).
+        apd50_step (float): Step size between APD50 values (must be uniform).
+        ap_time_res_s (float): Time resolution of the AP traces in seconds.
+        possible_apd50s_per_apd90 (dict): Dictionary mapping each APD90 to the available APD50 values.
+    """
     apd_tuples = np.array(list(ap_table_2d.keys()))
     max_sim_time = np.max(times_sim_s)
 
@@ -115,33 +145,46 @@ def preprocess_2d_ap_table(ap_table_2d, times_sim_s, every_xth_time):
 
 
 def monoalg_cv_to_conductivity(cv_cm_per_s):
+    """ Convert conduction velocity (CV) in cm/s to MonoAlg model conductivity values
+        based on a pre-tuned calibration curve.
 
-    # Convert CV to a MonoAlg conductivity
-    # Tuned based on 5cm cable 750ms duration, end cell stimulated at t=0 by -80 current, at dx=500um
+        The calibration was performed using a 5 cm cable with 750 ms duration, where
+        the end cell was stimulated at t=0 by -80 current, at a spatial resolution dx=500 um.
 
+    Args:
+        cv_cm_per_s (float or np.ndarray): Conduction velocity in centimeters per second.
+
+    Returns:
+        float or np.ndarray: Interpolated conductivity value(s) corresponding to the input CV(s).
+    """
     conductivities = [0, 0.000025, 0.00005, 0.00010, 0.00015, 0.00020, 0.00025, 0.00030, 0.00035, 0.00040, 0.00045,
                       0.00050, 0.00055, 0.00060]
-
     cvs_cm_per_s = [0, np.float64(7.692307692307692), np.float64(15.527950310559007), np.float64(28.571428571428573), np.float64(39.37007874015748), np.float64(48.54368932038835), np.float64(56.81818181818182), np.float64(64.1025641025641), np.float64(70.42253521126761), np.float64(76.92307692307692), np.float64(81.9672131147541), np.float64(87.71929824561403), np.float64(92.5925925925926), np.float64(96.15384615384616)]
-
     conductivity_interp = utils.linear_interpolation_arrays(cvs_cm_per_s, conductivities, cv_cm_per_s)
     return conductivity_interp
 
 
 def monoalg_conductivity_to_smoothing_sigma(conductivity, use_grads=True):
+    """ Convert MonoAlg conductivity values to Gaussian smoothing parameter sigma.
 
-    # Convert MonoAlg conductivity to a Gaussian smoothing parameter sigma
-    # Smoothing parameter sigma tuned based on a 1cm cube MonoAlg simulation 450ms in duration with 70% endo, 30% epi cells
-    # where all cells stimulated at t=0 with a -53 current, at dx=500um
-    # Tuned in 2 possible ways: best raw Vm match, or best Vm gradient norm match
-    # Can be refined using main_tune_smoothing.py
+        The smoothing parameter sigma was tuned using a 1 cm cube MonoAlg simulation (450 ms duration)
+        with 70% endocardial and 30% epicardial cells, all stimulated at t=0 with a -53 current
+        at dx=500 μm resolution.
+
+        Two tuning methods are available:
+        - Best raw Vm match (use_grads=False)
+        - Best Vm gradient norm match (use_grads=True, default)
+
+    Args:
+        conductivity (float or np.ndarray): MonoAlg conductivity value(s).
+        use_grads (bool): Whether to use gradient-based tuning (True) or raw Vm tuning (False).
+
+    Returns:
+        float or np.ndarray: Interpolated Gaussian smoothing sigma parameter(s).
+    """
 
     conductivities = [0, 0.000025, 0.00005, 0.00010, 0.00015, 0.00020, 0.00025, 0.00030, 0.00035, 0.00040, 0.00045,
                       0.00050, 0.00055, 0.00060]
-
-    # Based on dx=500um slab where AP table was the original one (based on stretching/compressing time axis)
-    #best_sigmas_grad_vms = [0, 1250, 2350, 2850, 3200, 3550, 3900, 4200, 4550, 4800, 5000, 5200, 5400, 5550]
-    #best_sigmas_vms      = [0, 1700, 2250, 3000, 3350, 3650, 4000, 4300, 4350, 4400, 4500, 4650, 4800, 4900]
 
     # Based on dx=500um slab where AP table used -known- pre-smoothing epi and endo AP shapes from MonoAlg
     best_sigmas_grad_vms = [np.float64(0.0), np.float64(1400.0), np.float64(1850.0), np.float64(2600.0),
@@ -152,18 +195,35 @@ def monoalg_conductivity_to_smoothing_sigma(conductivity, use_grads=True):
                        np.float64(3200.0), np.float64(3500.0), np.float64(3800.0), np.float64(4050.0),
                        np.float64(4350.0), np.float64(4700.0), np.float64(4900.0), np.float64(5100.0),
                        np.float64(5250.0)]
-
     if use_grads:
         sigmas = best_sigmas_grad_vms
     else:
         sigmas = best_sigmas_vms
-
     sigma_interp = utils.linear_interpolation_arrays(conductivities, sigmas, conductivity)
     return sigma_interp
 
+
 def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table_args, repol_args_2daptable, dx,
                              apd90_field_ms=None, apd50_field_ms=None):
+    """ Generate the membrane potential (Vm) field over time using a 2D AP table lookup and Gaussian smoothing
 
+    Args:
+        times_s (np.ndarray): Array of simulation time points in seconds.
+        activation_times_s (np.ndarray): Activation times for each cell in seconds.
+        twave_params (dict): Repolarisation parameters for the model
+        ap_table_args (tuple): Tuple containing AP table arrays and metadata:
+            (ap_table_arr, ap_table_rmps, min_apd90, max_apd90, min_apd50, max_apd50,
+             apd90_step, apd50_step, ap_time_res_s, possible_apd50s_per_apd90)
+        repol_args_2daptable (tuple): Repolarisation arguments including grid and smoothing params:
+            (x_i, y_i, z_i, vms_grid, dx, smoothed_mask, sigma_um, smoothing_cutoff_s,
+             seg_ids, all_seg_idxs)
+        dx (float): Spatial discretisation
+        apd90_field_ms (np.ndarray, optional): Predefined APD90 values per cell in milliseconds.
+        apd50_field_ms (np.ndarray, optional): Predefined APD50 values per cell in milliseconds.
+
+    Returns:
+        np.ndarray: 2D array (time x cells) of transmembrane voltages over time.
+    """
     # Unpack AP table information
     (ap_table_arr, ap_table_rmps, min_apd90, max_apd90, min_apd50, max_apd50,
      apd90_step, apd50_step, ap_time_res_s, possible_apd50s_per_apd90) = ap_table_args
@@ -173,7 +233,7 @@ def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table
     seg_ids, all_seg_idxs) = repol_args_2daptable
 
     if apd90_field_ms is not None and apd50_field_ms is not None:
-        print("Using existing AP field")  # TODO: add segmental handling
+        print("Using existing AP field")
     else:
 
         ap_shape_param = twave_params["ap_shape_param"]
@@ -212,7 +272,6 @@ def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table
 
         # Smoothing Vms during repolarisation phase
         if t > smoothing_cutoff_s:  # Apply smoothing only during repolarisation (assumed steady state of diffusion)
-
             all_vms[i] = gaussian_smoothing_fourier(all_vms[i], sigma_um, x_i, y_i, z_i, vms_grid, dx, smoothed_mask)
 
     return all_vms
@@ -220,21 +279,51 @@ def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table
 
 def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads, dx, activation_cutoff_s,
                        neighbour_arrays, neighbour_arrays2, neighbour_args, repol_args, batch_indices, batch_v_params, batch_activation_times_s, batch_all_vms,
-                       batch_twave_params, batch_apd_fields, calc_repol_times=True, return_vms=False,
-                       use_2daptable=False, ap_table_args=None, tied_segs=False):
+                       batch_twave_params, calc_repol_times=True, return_vms=False, ap_table_args=None):
+    """ Compute pseudo ECG signals and repolarisation times for a batch of repol parameter sets
 
+        For each trial in the batch:
+        - Generate the Vm field
+        - Optionally calculate repolarisation times from the Vm field.
+        - Compute pseudo ECG signals and gradient norms (for regularisation) using the given pseudo_ecg_function.
+
+    Args:
+        pseudo_ecg_function (callable): Function that computes pseudo ECG and mean gradient norms.
+        times_s (np.ndarray): Array of simulation time points in seconds.
+        ap_function (callable): Action potential function.
+        electrodes_xyz (np.ndarray): Electrode positions in 3D space.
+        elec_grads (np.ndarray): Electrode gradient vectors.
+        dx (float): Spatial discretisation
+        activation_cutoff_s (float): Cutoff time for activation phase vs. repolarisation (controls smoothing)
+        neighbour_arrays (list): Mesh structural info 1
+        neighbour_arrays2 (list): Mesh structural info 2
+        neighbour_args (dict): Additional arguments related to neighbours.
+        repol_args (tuple or None): Arguments for repolarisation calculation and Vm smoothing.
+        batch_indices (list): Indices of trials to process in this batch.
+        batch_v_params (list): Parameters for each trial in the batch.
+        batch_activation_times_s (list): Activation time arrays for each trial.
+        batch_all_vms (list): Vm fields for each trial; will generate if None.
+        batch_twave_params (list): T-wave parameters for each trial.
+        calc_repol_times (bool, optional): Whether to calculate repolarisation times. Default is True.
+        return_vms (bool, optional): Whether to return Vm fields for the batch. Default is False.
+        ap_table_args (tuple, optional): AP table parameters needed for Vm generation.
+
+    Returns:
+        tuple:
+            - dict: Computed pseudo ECG signals for each trial.
+            - dict: Repolarisation times for each trial (if calculated).
+            - list or None: Vm fields for each trial if return_vms=True, else None.
+            - dict: Mean of mean gradient norms from pseudo ECG computation per trial.
+    """
     batch_electrodes, batch_repol_times, batch_mean_mean_grad_norms = {}, {}, {}
 
-    #print("compute batch ecgs")
-
     for i_try in batch_indices:
-
+        # First generate Vms field based on the model parameters
         if batch_all_vms[i_try] is None and repol_args is not None:  # Only generate Vms field if you didn't input one
 
             vms_field = make_vms_field_2daptable(times_s, batch_activation_times_s[i_try],
                                                  batch_twave_params[i_try], ap_table_args,
                                                  repol_args, dx)
-
             batch_all_vms[i_try] = vms_field
 
             if calc_repol_times:  # Calculate post-smoothing repolarisation times
@@ -242,7 +331,7 @@ def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz
                 repol_times = np.empty(n_cells, dtype=float)
                 none_repols = False
 
-                for i_cell in range(n_cells):  # TODO explore the activation time input i_cell here and calc_apd function
+                for i_cell in range(n_cells):
                     apd, activation_time, repolarisation_time, ap_amp = moa.calc_apd_s(times_s, vms_field[:, i_cell])
 
                     if repolarisation_time is None:  # Record failed repolarisation in the mesh
@@ -256,28 +345,17 @@ def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz
 
                 batch_repol_times[i_try] = repol_times
 
-            else:
-                print("NOT computing repol times")
-
-        # TODO: as a debug step, we will save batch all vms generated by this step
-
-        #main_dir = "C:/Users/jammanadmin/Documents/Monoscription"
-        #np.save(f"{main_dir}/all_vms.npy", batch_all_vms)
-
-        #neighbour_arrays, neighbour_arrays2 = None, None  # TODO remove if needed
-
         # Calculate Pseudo ECG
-
         if batch_activation_times_s[i_try] is not None:
             activation = batch_activation_times_s[i_try]
         else:
             activation = None
 
+
         batch_electrodes[i_try], batch_mean_mean_grad_norms[i_try] = pseudo_ecg_function(times_s, ap_function,
                                                                                          electrodes_xyz, elec_grads, dx,
                                                      activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, batch_v_params[i_try],
                                                       activation, batch_all_vms[i_try])
-
     if return_vms:
         batch_vms_to_return = batch_all_vms
     else:
@@ -285,14 +363,45 @@ def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz
 
     return batch_electrodes, batch_repol_times, batch_vms_to_return, batch_mean_mean_grad_norms
 
+
 def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads,
                      dx, activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, qrs_params=None, all_all_time_matrices=None,
-                     all_activation_times_s=None, all_all_vms=None, all_apd_fields=None, return_activation_times=1, twave_params=None,
+                     all_activation_times_s=None, all_all_vms=None, all_apd_fields=None, twave_params=None,
                      repol_args=None, calc_repol_times=True, return_vms=False, ap_table_args=None):
+    """ Run repolarisation ECG computations in parallel batches
 
-    # TODO: profile runtime of the batching overhead?
-    t0 = time.time()
+    Args:
+        n_tries (int): Total number of simulation tries.
+        n_per_batch (int): Number of tries to process per batch.
+        pseudo_ecg_function (callable): Function to compute pseudo ECG and gradients.
+        times_s (np.ndarray): Simulation time points (seconds).
+        ap_function (callable): Action potential function.
+        electrodes_xyz (np.ndarray): 3D electrode coordinates.
+        elec_grads (np.ndarray): Electrode gradient vectors.
+        dx (float): Spatial discretisation
+        activation_cutoff_s (float): When activation phase ends
+        neighbour_arrays (list): Mesh structure info 1
+        neighbour_arrays2 (list): Mesh structure info 2
+        neighbour_args (dict): Additional neighbour-related arguments.
+        qrs_params (list, optional): Parameters for QRS complexes per try.
+        all_all_time_matrices (list, optional): Not currently used but reserved.
+        all_activation_times_s (list, optional): Precomputed activation times per try.
+        all_all_vms (list, optional): Precomputed Vm fields per try.
+        all_apd_fields (list, optional): Predefined APD fields per try.
+        twave_params (list, optional): T-wave parameters per try.
+        repol_args (tuple, optional): Arguments controlling repolarisation smoothing and Vm generation.
+        calc_repol_times (bool, optional): Whether to calculate repolarisation times. Default True.
+        return_vms (bool, optional): Whether to return Vm fields after computation. Default False.
+        ap_table_args (tuple, optional): AP table data
 
+    Returns:
+        tuple:
+            - dict: Pseudo ECG electrode signals for each try.
+            - dict: Recorded activation times per try (currently empty).
+            - dict: Repolarisation times per try if calculated.
+            - dict: Vm fields returned if requested; else empty.
+            - dict: Mean of mean gradient norms per try from ECG computation.
+    """
     all_electrodes, all_repol_times, all_vms_return, all_mean_mean_grad_norms = {}, {}, {}, {}
     batches = [range(i, min(i + n_per_batch, n_tries)) for i in range(0, n_tries, n_per_batch)]
     batched_v_params = [{} for _ in range(len(batches))]
@@ -302,8 +411,6 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
     batched_all_apd_fields = [{} for _ in range(len(batches))]
 
     record_activation_times_s = {}
-
-    print("Into batch ECG runner")
 
     # Precompute all activation times rather than pass in all_time_matrix to each subprocess
     for i, batch in enumerate(batches):
@@ -318,7 +425,6 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
             if all_all_vms is None and repol_args is not None and twave_params is not None:
                 # Then we need to set all_all_vms using twave_params and repol_args in each subprocess
                 batched_twave_params[i][i_try] = twave_params[i_try]
-
 
             batched_v_params[i][i_try] = None
 
@@ -338,12 +444,8 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
                 v_params = qrs_params[i_try][0]
                 batched_v_params[i][i_try] = v_params
 
-    exec_t0 = time.time()
-
-    print("About to multiprocess parallel")
     # Batch multiprocess parallel execution of activation times and pseudo ECG computation
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        # TODO consider using shared memory space because passing all structural data into workers is intensive
         futures = [executor.submit(compute_batch_ecgs, pseudo_ecg_function, times_s, ap_function, electrodes_xyz,
                                   elec_grads, dx, activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, repol_args, batch,
                                    batch_v_params, batch_activation_times_s, batch_all_vms, batch_twave_params, batch_apd_fields,
@@ -363,16 +465,6 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
             if batch_vms_to_return is not None:
                 all_vms_return.update(batch_vms_to_return)
 
-    exec_t1 = time.time()
-
-    if not return_activation_times:
-        batched_activation_times_s = None
-
-    t1 = time.time()
-    print(f"{round((t1 - t0) / n_tries, 4)} seconds elapsed per try")
-
-    print(exec_t1 - exec_t0, "Parallel processing time")
-
     return all_electrodes, record_activation_times_s, all_repol_times, all_vms_return, all_mean_mean_grad_norms
 
 
@@ -387,60 +479,22 @@ def pseudo_ecg(times_s, ap_function, electrodes_xyz, elec_grads, dx,
     if all_vms is None:
         raise Exception("Only works for precalculated Vms so far, otherwise vms = ap_function(time_point_s, activation_times_s)")
 
-
     electrodes_vs = np.zeros((n_elec, n_times))
-
-    # TODO custom np.add.at function that is numba compliant -and- faster, src: stackoverflow
-
-
-    """# Version that is numpy vectorised over time axis too (more memory intensive)
-    vms_diff_all = all_vms[:, valid_idxs] - all_vms[:, valid_positions]  # Shape: (n_times, 6 * n_cells)
-    grad_all = np.zeros((n_times, n_cells, 3))
-    np.add.at(grad_all, (np.arange(all_vms.shape[0])[:, None], valid_positions, valid_directions_for_neighbors),
-              (vms_diff_all / dx) * valid_offsets_for_neighbors)
-
-    # Normalize grad for each direction by the counts (which are the same across all time steps)
-    grad_all[:, :, 0] /= np.maximum(count_x, 1)  # Normalize x direction
-    grad_all[:, :, 1] /= np.maximum(count_y, 1)  # Normalize y direction
-    grad_all[:, :, 2] /= np.maximum(count_z, 1)  # Normalize z direction
-
-    # Extract the gradients for each direction
-    grad_x_all, grad_y_all, grad_z_all = grad_all[:, :, 0], grad_all[:, :, 1], grad_all[:, :, 2]
-
-    # Extract the gradient components for the selected cells and time points
-    grad_x_all_selected = grad_x_all[:, original_idxs]  # Shape: (n_times, len(original_idxs))
-    grad_y_all_selected = grad_y_all[:, original_idxs]  # Shape: (n_times, len(original_idxs))
-    grad_z_all_selected = grad_z_all[:, original_idxs]  # Shape: (n_times, len(original_idxs))
-
-    x_comp_all = grad_x_all_selected[:, :, None] * elec_grads[0, :, original_idxs]  # Shape: (n_times, len(original_idxs), n_electrodes)
-    y_comp_all = grad_y_all_selected[:, :, None] * elec_grads[1, :, original_idxs]
-    z_comp_all = grad_z_all_selected[:, :, None] * elec_grads[2, :, original_idxs]
-
-    electrodes_vs = -np.sum(x_comp_all + y_comp_all + z_comp_all, axis=1)  # Shape: (n_electrodes, n_times)
-    electrodes_vs = electrodes_vs.T"""
-
     mean_grad_norms = []  # Store mean grad norm across cells for each time step
 
-    # For now, we completely ignore activation optimisation
-    # Version without vectorisation over time axis (less memory intensive)
     for t_idx in range(n_times):
 
         grad = np.zeros((n_cells, 3))
         vms = all_vms[t_idx]
-
         vms_diff = vms[valid_idxs] - vms[valid_positions]  # Vm difference between neighbours (6 * n_cells,)
 
         # Adds to grad in vectorised fashion, but ensures multiple accesses don't get overwritten
-        #grad[valid_positions, valid_directions_for_neighbors] += (vms_diff / dx) * valid_offsets_for_neighbors
         np.add.at(grad, (valid_positions, valid_directions_for_neighbors), (vms_diff / dx) * valid_offsets_for_neighbors)
-
-        #add_at(grad, (valid_positions, valid_directions_for_neighbors), (vms_diff / dx) * valid_offsets_for_neighbors)
 
         # Avoid division by zero by checking the count for each cell
         grad[:, 0] /= np.maximum(count_x, 1)  # per-cell count for x direction
         grad[:, 1] /= np.maximum(count_y, 1)  # per-cell count for y direction
         grad[:, 2] /= np.maximum(count_z, 1)  # per-cell count for z direction
-
         grad_x, grad_y, grad_z = grad[:, 0], grad[:, 1], grad[:, 2]
 
         # Dot ∇Vm with ∇(1/r)
@@ -465,35 +519,30 @@ def pseudo_ecg(times_s, ap_function, electrodes_xyz, elec_grads, dx,
     return electrodes_vs, mean_mean_grad_norms
 
 
-def match_sim_and_target_times(times_sim_s, times_target_s):
-
-    n_sim_times = len(times_sim_s)
-
-    target_comparison_idxs = np.empty(n_sim_times, dtype=int)
-
-    for i, sim_time in enumerate(times_sim_s):
-        target_comparison_idxs[i] = get_closest_time(times_target_s, sim_time)
-
-    # Sanity check to ensure point on target ECG being compared to is close enough in time
-    diff_tol_s = 0.001  # 1ms tolerance
-    time_diffs_s = np.abs(times_target_s[target_comparison_idxs] - times_sim_s)
-    max_time_diff_s = np.max(time_diffs_s)
-    i_max_time_diff = np.argmax(time_diffs_s)
-    if max_time_diff_s > diff_tol_s:
-        print(f"{times_sim_s=}")
-        print(f"{times_target_s=}")
-        print(f"{time_diffs_s=}")
-        raise Exception(
-            f"Matching time points with target ECG more than {diff_tol_s} secs apart, {max_time_diff_s}, can also be caused by the range of target data (end of target T wave less than max repol time you tried simulating)")
-
-    return target_comparison_idxs
-
-
 def get_diff_score(times_sim_s, leads_twave_sim, times_target_s, leads_target, leads_qrs_sim,
                    times_activation_s, no_qrs=False):
-    lead_names = LEAD_NAMES_12
+    """ Calculate a T-wave difference score between simulated and target ECG leads, with QRS-based normalisation.
 
-    # TODO: probably just consider 10 leads instead?, otherwise some electrodes overrepresented
+        Compares rescaled simulated T waves to target ECG data by aligning time points and scaling QRS amplitudes.
+        The resulting score reflects average absolute differences across all 12 leads, scaled by target T wave amplitudes.
+
+    Args:
+        times_sim_s (np.ndarray): Time points for the simulated ECG (seconds).
+        leads_twave_sim (dict): Simulated T-wave ECG signals (lead_name -> array).
+        times_target_s (np.ndarray): Time points for the target ECG (seconds).
+        leads_target (dict): Target ECG signals (lead_name -> array).
+        leads_qrs_sim (dict): Simulated QRS ECG signals (lead_name -> array).
+        times_activation_s (np.ndarray): Cell activation times (seconds), used to determine QRS window.
+        no_qrs (bool, optional): If True, assumes no QRS data and scales using full ECG instead. Default False.
+
+    Returns:
+        tuple:
+            - float or None: Mean normalised absolute difference across leads (None if no_qrs=True).
+            - np.ndarray: Time points in the target ECG that match simulation times.
+            - dict: Full rescaled simulated ECG (QRS + T) per lead.
+            - dict: Target ECG signals at aligned time points per lead.
+    """
+    lead_names = LEAD_NAMES_12
 
     # Limit target ECG to just the QRS
     activation_cutoff_s = max(times_activation_s)
@@ -538,26 +587,21 @@ def get_diff_score(times_sim_s, leads_twave_sim, times_target_s, leads_target, l
         sum_abs_diffs_normapproach = {name: np.mean(abs_diffs_normapproach[name]) for name in lead_names}
         mean_sum_abs_diffs_normapproach = np.mean(list(sum_abs_diffs_normapproach.values()))
 
-        """import ecg
-        # Plot what is actually being compared
-        ecg.plot_ecg([times_sim_s, times_sim_s], [leads_twave_sim_rescaled, leads_twave_target], show=True, colors=["red", "black"])
-
-        # If computing correlation coefficient between T waves
-        corrs = []
-        for lead_name in LEAD_NAMES_12:
-            corr = comp.correlation(leads_twave_sim_rescaled[lead_name], leads_twave_target[lead_name])
-            corrs.append(corr)
-        print(print(f"Corr of {np.mean(corrs)} +- {np.std(corrs)}"))"""
-
     else:
         mean_sum_abs_diffs_normapproach = None
-
-    # TODO: consider doing each T wave peak individually. Maybe we can define a 'flat T wave' to avoid flat noisy waves coming up weirdly
 
     return mean_sum_abs_diffs_normapproach, times_target_s[target_comparison_idxs], sim_full_ecg_leads, leads_target
 
 
 def hash_twave_param(param):
+    """ Hash a repolarisation model's params
+
+    Args:
+        param (dict): Dictionary of T-wave parameters (keys as strings, values can be scalars or numpy arrays).
+
+    Returns:
+        str: 8-character hexadecimal hash string representing the parameter set.
+    """
     h = hashlib.md5()
     # Iterate through dictionary and update hash
     for key, value in sorted(param.items()):
@@ -572,42 +616,55 @@ def hash_twave_param(param):
 
 def mutate_twave_params_2daptable(worse_keys, better_keys, all_params, possible_apd90s_ms, min_possible_apd90_ms,
                                   max_possible_apd90_ms, apd90_snapping_ms, all_dijk_dists_cm, trans, lv_rv, apexb):
+    """ Replace worse-performing T-wave parameter sets with mutated versions of better-performing ones.
 
-    t0 = time.time()
-    #params_copy = copy.deepcopy(all_params)  # Don't copy -every- parameter in there
-    t1 = time.time()
+    Args:
+        worse_keys (list): Keys corresponding to worse-performing parameter sets to be replaced.
+        better_keys (list): Keys corresponding to better-performing parameter sets to sample from.
+        all_params (dict): Dictionary mapping keys to T-wave parameter dictionaries.
+        possible_apd90s_ms (list): List of valid APD90 values in ms.
+        min_possible_apd90_ms (float): Minimum allowed APD90 value.
+        max_possible_apd90_ms (float): Maximum allowed APD90 value.
+        apd90_snapping_ms (float): Resolution step for snapping mutated APD90s.
+        all_dijk_dists_cm (np.ndarray): Precomputed Dijkstra distance matrix in cm.
+        trans (np.ndarray): Transmural coordinate per cell.
+        lv_rv (np.ndarray): LV/RV coordinate per cell.
+        apexb (np.ndarray): Apex-base coordinate per cell.
 
-    print(t1 - t0, "time on copying all params")
-
-    t0 = time.time()
-
-    # Replace worse models with random choice of better models, but mutated slightly
+    Returns:
+        dict: Updated `all_params` with mutated entries replacing the worse ones.
+    """
     for i, worse_key in enumerate(worse_keys):
 
-        #replacement_apds = params_copy[random.choice(better_keys)]
         replacement_apds = all_params[random.choice(better_keys)]
-
         mutated_replacement_apds = copy.deepcopy(replacement_apds)
-
-        a = 5
-
         #  Prevents mutated parameters being identical to the originals
         while np.array_equal(mutated_replacement_apds["apd90s_ms"], replacement_apds["apd90s_ms"]):
 
             mutated_replacement_apds = mutate_twave_2daptable(replacement_apds, min_possible_apd90_ms, max_possible_apd90_ms,
                                                               apd90_snapping_ms, all_dijk_dists_cm, trans, lv_rv, apexb)
-
         all_params[worse_key] = mutated_replacement_apds
-        #params_copy[worse_key] = mutated_replacement_apds
 
-    t1 = time.time()
-    print(t1 - t0, "spent on the mutate_twave_2daptable")
+    return all_params
 
-    return all_params #params_copy
 
 def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possible_apd90_ms,
                            apd90_snapping_ms, all_dijk_dists_cm, trans, lv_rv, apexb):
+    """ Applies a local mutation to a set of APD90 values and optionally mutates the AP shape parameter.
 
+    Args:
+        replacement_params (dict): Dict with keys 'apd90s_ms' and 'ap_shape_param' to be mutated.
+        min_possible_apd90_ms (float): Minimum allowed APD90 after mutation.
+        max_possible_apd90_ms (float): Maximum allowed APD90 after mutation.
+        apd90_snapping_ms (float): Not used internally, kept for API compatibility.
+        all_dijk_dists_cm (np.ndarray): Dijkstra distance array per point for defining spatial neighbourhoods.
+        trans (np.ndarray): Array of transmural position values (0 = endo, 1 = epi).
+        lv_rv (np.ndarray): Array of LV/RV labels per point (not used in this mutation).
+        apexb (np.ndarray): Apex-base label or coordinates (not used in this mutation).
+
+    Returns:
+        dict: Mutated parameter dictionary with keys 'apd90s_ms' and 'ap_shape_param'.
+    """
     apd90s_ms = np.array(replacement_params["apd90s_ms"])
     apd90s_ms_new = apd90s_ms.copy()
     ap_shape_param = replacement_params["ap_shape_param"]
@@ -630,8 +687,6 @@ def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possib
     else:
         ap_shape_param_new = ap_shape_param
 
-    # TODO explore vs. exploit?
-
     # Perturb the APD90 field
     min_rad_cm, max_rad_cm = 1.0, 4.0
     min_poss_apd_ms, max_poss_apd_ms = 200, 400
@@ -647,14 +702,6 @@ def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possib
 
     min_apd_mult_explore, max_apd_mult_explore = 0.8, 1.2
     min_apd_mult_exploit, max_apd_mult_exploit = 0.92, 1.08
-    """p_mutate_seg_exploit = 0.1  # Average fraction of segments changed during exploit mutation
-    apd90_perturbations_exploit_ms = np.arange(-30, 30 + apd90_snapping_ms, apd90_snapping_ms, dtype=np.int16)
-    apd90_perturbations_exploit_ms = apd90_perturbations_exploit_ms[
-        apd90_perturbations_exploit_ms != 0]  # Remove change of zero
-
-    p_explore = 0.3  # Chance of doing an explore mutation vs. exploit mutation
-    p_mutate_seg_explore = 0.3  # Average fraction of segments changed during explore mutation"""
-
 
     if random.random() <= p_explore:
         min_apd_mult, max_apd_mult = min_apd_mult_explore, max_apd_mult_explore  # Explore mutation
@@ -672,7 +719,6 @@ def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possib
         idxs_in_rad = np.where(dijk_dists_cm <= rand_rad_cm)[0]
 
         if random.random() <= p_transmurality:
-
 
             if random.random() <= p_entire_ventricles_trans:
                 # Then just apply the transmural mutation to the entire ventricles, not just locally
@@ -700,7 +746,16 @@ def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possib
 
 
 def apd50_from_apd90(apd90, ap_shape_param, possible_apd50s):
-    """ Use AP shape param to find which APD50 corresponds to the set APD90 (for 2D AP table) """
+    """ Determines the APD50 value corresponding to a given APD90 using an AP shape parameter.
+
+    Args:
+        apd90 (float): The APD90 value in milliseconds.
+        ap_shape_param (float): Value between 0 and 1 representing the relative steepness of the AP plateau.
+        possible_apd50s (np.ndarray): Array of valid APD50 values for the given APD90.
+
+    Returns:
+        float: The selected APD50 value from `possible_apd50s`.
+    """
     idx = round(ap_shape_param * (len(possible_apd50s) - 1))
     apd50 = possible_apd50s[idx]
     return apd50

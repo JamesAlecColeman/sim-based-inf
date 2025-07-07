@@ -275,7 +275,6 @@ def main():
                                                                   grid_dict, candidate_root_node_indices,
                                                                   candidate_root_neighbours, v_endos, v_myos,
                                                                   all_ids_and_diff_scores)
-
         next_iter_params = {}
 
         # Check which new root indices + velocity params have been analysed before already + set up next iteration
@@ -291,6 +290,7 @@ def main():
         # Update which root indices and v params to analyse next
         current_iter_params = next_iter_params
 
+        # Find best scores and params this iteration
         min_diff_score = min(population_diff_scores.values())
         min_i_try = min(population_diff_scores, key=population_diff_scores.get)
         min_key = population_params[min_i_try]
@@ -302,7 +302,7 @@ def main():
             best_ats = ids_and_ecgs_ats_params[hash_best_param][1]
             best_leads = ids_and_ecgs_ats_params[hash_best_param][0]
 
-        if iter_no % save_best_every_x == 0:
+        if iter_no % save_best_every_x == 0:  # Saving of fast results
             alg = alg[:6]
             alg.append(best_ats)
             fast_download_folder = f"fast_{benchmark_id}"
