@@ -700,8 +700,8 @@ def mutate_twave_2daptable(replacement_params, min_possible_apd90_ms, max_possib
     n_apd_mutations_explore = 10
     n_apd_mutations_exploit = 3
 
-    min_apd_mult_explore, max_apd_mult_explore = 0.8, 1.2
-    min_apd_mult_exploit, max_apd_mult_exploit = 0.92, 1.08
+    min_apd_mult_explore, max_apd_mult_explore = 0.8, 1.2  # e.g. 300ms could go between 240-360ms
+    min_apd_mult_exploit, max_apd_mult_exploit = 0.92, 1.08  # e.g. 300ms could go between 276-324ms
 
     if random.random() <= p_explore:
         min_apd_mult, max_apd_mult = min_apd_mult_explore, max_apd_mult_explore  # Explore mutation

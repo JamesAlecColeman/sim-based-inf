@@ -175,8 +175,6 @@ def main():
 
     times_s = np.concatenate((times_activation_s, times_repol_s))
 
-    # TODO log the AP table too
-
     # Load AP table
     ap_table_2d = np.load(f"{main_dir}/{ap_table_name}.npy", allow_pickle=True).item()  # APD: [times_map_s, vms_new, mKr, mK1]
     ap_table_args = twm.preprocess_2d_ap_table(ap_table_2d, times_s, 5)
@@ -200,8 +198,6 @@ def main():
     conductivity = twm.monoalg_cv_to_conductivity(v_myo_cm_per_s)
 
     sigma_um_param = twm.monoalg_conductivity_to_smoothing_sigma(conductivity)
-
-    #sigma_um_param = 0.0########## TODO TODO TODO TODO TODO TODO EDIT EDIT EDIT EDIT EDIT EDIT EDIT
 
 
     print(f"{sigma_um_param=}")
@@ -233,11 +229,8 @@ def main():
     endo_labels, labels_meaning, plane_6_params, electrodes_xyz = cache.check_cache(mesh_info_dict, keys_to_read)
 
     # Preprocessing for pseudo ECG computation
-    # TODO: grid_neighbours is now defunct
+
     grid_dict = alg_utils.make_grid_dictionary(xs, ys, zs)
-
-    # grid_dict, grid_neighbours, elec_grads = em.pseudo_ecg_preprocessing(alg, electrodes_xyz)
-
     neighbour_arrays, neighbour_arrays2 = ecg.get_neighbour_arrays(xs, ys, zs, dx, grid_dict)
 
     elec_grads = ecg.precompute_elec_grads(xs, ys, zs, electrodes_xyz, dx, neighbour_arrays).astype(np.float32)
@@ -335,10 +328,9 @@ def main():
 
     alg = alg[:6]
 
-    # TODO we are using WIP For now
     # QRS is now generated using the AP table to have a QRS of comparable amplitude to the T wave
     print("QRS part")
-    all_activation_times_s = [activation_times_s]  # TODO wip pseudo ecg func
+    all_activation_times_s = [activation_times_s]
 
     all_electrodes, *_ = twm.batch_ecg_runner(1, 1, twm.pseudo_ecg, times_activation_s,
                                              None, electrodes_xyz, elec_grads, dx, 0.0,
