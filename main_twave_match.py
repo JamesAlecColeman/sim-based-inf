@@ -49,13 +49,13 @@ def main():
     else:  # Local run
         import addcopyfighandler
         main_dir = "C:/Users/jammanadmin/Documents/sim-based-inf-data"
-        patient_id, bench_dx = "DTI1241", 500
+        patient_id, bench_dx = "DTI024", 500
         bench_type = "hcmbig"
         benchmark_id = f"{patient_id}_{bench_dx}_{bench_type}"
         seg_name = "rvseg"
-        n_tries = 128
+        n_tries = 512
         lambda_reg = 281.0
-        n_processors = 8
+        n_processors = 4
         inferences_folder = "Inferences_twave_local"
         save_best_every_x = 1
 
@@ -379,6 +379,8 @@ def main():
                                                          return_vms=False, ap_table_args=ap_table_args)
         t1_batch = time.time()
         print(f"{t1_batch - t0_batch} secs on batch ecgs")
+
+        print(f"{round((t1_batch - t0_batch) / n_tries, 4)} secs elapsed per try")
 
         alg.append(activation_times_s)
 

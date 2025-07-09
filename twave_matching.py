@@ -277,8 +277,8 @@ def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table
     return all_vms
 
 
-def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads, dx, activation_cutoff_s,
-                       neighbour_arrays, neighbour_arrays2, neighbour_args, repol_args, batch_indices, batch_v_params, batch_activation_times_s, batch_all_vms,
+def compute_batch_ecgs(pseudo_ecg_function, times_s, electrodes_xyz, elec_grads, dx,
+                       neighbour_args, repol_args, batch_indices, batch_activation_times_s, batch_all_vms,
                        batch_twave_params, calc_repol_times=True, return_vms=False, ap_table_args=None):
     """ Compute pseudo ECG signals and repolarisation times for a batch of repol parameter sets
 
@@ -352,10 +352,9 @@ def compute_batch_ecgs(pseudo_ecg_function, times_s, ap_function, electrodes_xyz
             activation = None
 
 
-        batch_electrodes[i_try], batch_mean_mean_grad_norms[i_try] = pseudo_ecg_function(times_s, ap_function,
-                                                                                         electrodes_xyz, elec_grads, dx,
-                                                     activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, batch_v_params[i_try],
-                                                      activation, batch_all_vms[i_try])
+        batch_electrodes[i_try], batch_mean_mean_grad_norms[i_try] = pseudo_ecg_function(times_s, electrodes_xyz,
+                                                                                         elec_grads, dx, neighbour_args,
+                                                                                         batch_all_vms[i_try])
     if return_vms:
         batch_vms_to_return = batch_all_vms
     else:
@@ -446,9 +445,9 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
 
     # Batch multiprocess parallel execution of activation times and pseudo ECG computation
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(compute_batch_ecgs, pseudo_ecg_function, times_s, ap_function, electrodes_xyz,
-                                  elec_grads, dx, activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, repol_args, batch,
-                                   batch_v_params, batch_activation_times_s, batch_all_vms, batch_twave_params, batch_apd_fields,
+        futures = [executor.submit(compute_batch_ecgs, pseudo_ecg_function, times_s, electrodes_xyz,
+                                  elec_grads, dx, neighbour_args, repol_args, batch, batch_activation_times_s,
+                                  batch_all_vms, batch_twave_params,
                                    calc_repol_times=calc_repol_times, return_vms=return_vms,
                                    ap_table_args=ap_table_args)
 
@@ -467,10 +466,12 @@ def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_func
 
     return all_electrodes, record_activation_times_s, all_repol_times, all_vms_return, all_mean_mean_grad_norms
 
-
+"""
 def pseudo_ecg(times_s, ap_function, electrodes_xyz, elec_grads, dx,
                    activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, v_params,
                    activation_times_s, all_vms, compute_grad_norms=True):
+"""
+def pseudo_ecg(times_s, electrodes_xyz, elec_grads, dx, neighbour_args, all_vms, compute_grad_norms=True):
 
     n_elec, n_cells, n_times = len(electrodes_xyz), elec_grads.shape[2], len(times_s)
     count_x, count_y, count_z, valid_idxs, valid_positions, valid_directions_for_neighbors, valid_offsets_for_neighbors = neighbour_args

@@ -399,7 +399,7 @@ def pseudo_ecg_qrs(times_s, ap_function, electrodes_xyz, elec_grads, dx, activat
             neighbours_of_active_latest = unstructured_neighbour_idxs[activated_idxs_latest]
             valid_neighbors = neighbours_of_active_latest[neighbours_of_active_latest != -1]
             all_idxs = np.concatenate((activated_idxs_latest, valid_neighbors))
-            calc_grad_at_idxs = np.unique(all_idxs)
+            calc_grad_at_idxs = all_idxs  #np.unique(all_idxs)
             calc_grad_at_idxs = np.array(calc_grad_at_idxs, dtype=int)
             grad = ecg.calc_grads(np.array(vms), neighbour_arrays, dx, special_indices=calc_grad_at_idxs)
             grad_x, grad_y, grad_z = grad[:, 0], grad[:, 1], grad[:, 2]
