@@ -323,8 +323,7 @@ def main():
     all_activation_times_s = [activation_times_s]
 
     all_electrodes, *_ = twm.batch_ecg_runner(1, 1, twm.pseudo_ecg, times_activation_s,
-                                             None, electrodes_xyz, elec_grads, dx, 0.0,
-                                             None, None, neighbour_args, all_all_vms=None,
+                                            electrodes_xyz, elec_grads, dx, neighbour_args, all_all_vms=None,
                                              qrs_params=None,
                                              twave_params=current_iter_params,
                                              all_activation_times_s=all_activation_times_s,
@@ -344,12 +343,8 @@ def main():
 
     compute_repolarisation_times = True
 
-    print("T wave part")
-
     # Main iterative refinement of T wave loop
     for iter_no in range(n_iterations):
-
-        t0_iter = time.time()
 
         n_tries = len(current_iter_params)
         n_per_batch = int(round(n_tries / n_processors))
@@ -358,19 +353,15 @@ def main():
         print(f"===================================== {iter_no} =====================================")
         print(f"n_tries = {n_tries}, n_per_batch = {n_per_batch}")
 
-        t0_act = time.time()
         all_activation_times_s = [activation_times_s for _ in range(n_tries)]  # All use same activation sequence
-        t1_act = time.time()
-        print(t1_act - t0_act, "on activation list prep")
 
         # Compute electrode signals for these initial root nodes
         print(f"Number of parameter sets being ECG-tested: {len(current_iter_params)}")
         t0_batch = time.time()
         (all_electrodes, _, all_repol_times,
          all_vms_return,
-         all_mean_mean_grad_norms) = twm.batch_ecg_runner(n_tries, n_per_batch, twm.pseudo_ecg, times_repol_s, None,
-                                                         electrodes_xyz, elec_grads, dx, 0.0, None,
-                                                         None, neighbour_args, all_all_vms=None,
+         all_mean_mean_grad_norms) = twm.batch_ecg_runner(n_tries, n_per_batch, twm.pseudo_ecg, times_repol_s,
+                                                         electrodes_xyz, elec_grads, dx, neighbour_args, all_all_vms=None,
                                                          qrs_params=None,
                                                          twave_params=current_iter_params,
                                                          all_activation_times_s=all_activation_times_s,
@@ -391,8 +382,6 @@ def main():
         population_reg_scores = {}
         population_ids = {}
         population_ids_check = {}
-
-        t0_proc = time.time()
 
         for i_try in tries:
             leads_twave_sim = ecg.ten_electrodes_to_twelve_leads(all_electrodes[i_try])
@@ -421,25 +410,15 @@ def main():
             ids_and_ecgs_rts_params[param_id] = [all_leads_sim[i_try], store_repol_times_ms, twave_param]
             all_ids_and_grad_norms[param_id] = all_mean_mean_grad_norms[i_try]
 
-        t1_proc = time.time()
-
-        print(t1_proc - t0_proc, "time spent processing stuff")
-
-        t0 = time.time()
         # Retrieval of diff scores in the population but not simulated this iteration
         population_params = current_iter_params.copy()
         new_key = max(population_diff_scores.keys()) + 1
 
-        t_hash = 0
 
         for key, twave_param in mutated_params.items():  # mutated_params is of the population size
             # current_iter_params is of size n_tries of this iteration (unseen params)
 
-            t0_hash = time.time()
             param_id = twm.hash_twave_param(twave_param)
-            t1_hash = time.time()
-
-            t_hash += t1_hash - t0_hash
 
             if param_id in all_ids_and_diff_scores and param_id not in population_ids_check:
                 # Retrieving seen difference scores kept in the population but that were not simulated this iteration
@@ -452,13 +431,9 @@ def main():
                 population_ids_check[param_id] = 1
                 new_key += 1
 
-        print(t_hash, "was spent on hashing")
-        t1 = time.time()
-        print("Retrieval time", t1 - t0)
         print(f"Number of population diff scores: {len(population_diff_scores)}")
 
         # Find the keys with scores less than or equal to the n th percentile value
-        t0_scoring = time.time()
         scores = list(population_diff_scores.values())  # T wave discrepancy scores
         regularised_scores = list(population_reg_scores.values())
 
@@ -467,25 +442,15 @@ def main():
 
         keys_above = [key for key, value in population_reg_scores.items() if value > percentile_thresh]  # Worse
 
-        # Find best params before mutation as we aren't deepcopying pop params any more
         min_diff_score = min(population_diff_scores.values())
-        min_i_try = min(population_diff_scores, key=population_diff_scores.get)
-        best_params = population_params[min_i_try]
-        min_reg_score = min(population_reg_scores.values())
         min_i_try_reg = min(population_reg_scores, key=population_reg_scores.get)
         best_reg_params = population_params[min_i_try_reg]
         hash_best_param = twm.hash_twave_param(best_reg_params)
-        t1_scoring = time.time()
-        print(t1_scoring - t0_scoring, "time on scoring")
 
-        t0_mut = time.time()
+
         mutated_params = twm.mutate_twave_params_2daptable(keys_above, keys_below, population_params, possible_apd90s_ms,
                                                           min_possible_apd90_ms, max_possible_apd90_ms,
                                                           apd90_snapping_ms, all_dijk_dists_cm, trans, lv_rv, apexb)
-        t1_mut = time.time()
-        print(f"{t1_mut - t0_mut} secs on mutation")
-
-        t0_next = time.time()
 
         next_iter_params = {}
         next_iter_tries_ct = 0
@@ -498,10 +463,6 @@ def main():
                 next_iter_tries_ct += 1
 
         current_iter_params = next_iter_params
-
-        t1_next = time.time()
-        print(t1_next - t0_next, "time on next iter prep")
-
 
         if hash_best_param in ids_and_ecgs_rts_params:
             # Then the new best reg params were found this iteration (so update all best values)
@@ -545,9 +506,6 @@ def main():
         #print("best reg params:", best_reg_params)
         print(f"Min: {round(min_diff_score, 5)}, 10th best: {tenth_best_score}, Mean: {round(mean_diff_score, 5)}, Uniques: {n_uniques}")
 
-        t1_iter = time.time()
-
-        print(f"{t1_iter - t0_iter} secs this iter")
 
         if use_best_guess:
             print("All diff scores:", population_diff_scores.values())

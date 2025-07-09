@@ -363,8 +363,8 @@ def compute_batch_ecgs(pseudo_ecg_function, times_s, electrodes_xyz, elec_grads,
     return batch_electrodes, batch_repol_times, batch_vms_to_return, batch_mean_mean_grad_norms
 
 
-def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, ap_function, electrodes_xyz, elec_grads,
-                     dx, activation_cutoff_s, neighbour_arrays, neighbour_arrays2, neighbour_args, qrs_params=None, all_all_time_matrices=None,
+def batch_ecg_runner(n_tries, n_per_batch, pseudo_ecg_function, times_s, electrodes_xyz, elec_grads,
+                     dx, neighbour_args, qrs_params=None,
                      all_activation_times_s=None, all_all_vms=None, all_apd_fields=None, twave_params=None,
                      repol_args=None, calc_repol_times=True, return_vms=False, ap_table_args=None):
     """ Run repolarisation ECG computations in parallel batches
