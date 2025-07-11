@@ -50,7 +50,7 @@ def main():
     ############################################# Key Parameters #######################################################
     run_id = f"sim-based-inf-{n_tries}"
     dx, mesh_type = 2000, ""
-    n_iterations, percent_cutoff = 1200, 87.5
+    n_iterations, percent_cutoff = 2200, 87.5
     iter_dt_s = 0.002
     plot, use_fibers, use_best_guess, return_activation_times = 1, 0, 0, 1
     min_n_root_nodes, max_n_root_nodes, root_nodes_dist_apart_um = 6, 10, 5000

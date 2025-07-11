@@ -3,7 +3,7 @@ import sys
 running_on_arc = False
 
 if running_on_arc:
-    scripts_dir = "/home/scat8499/monoscription_python/JAC_Py_Scripts"
+    scripts_dir = "Your ARC Python directory here"
     sys.path.append(scripts_dir)
 
 import twave_matching as twm
@@ -24,7 +24,7 @@ from scipy.sparse.csgraph import dijkstra
 
 def main():
     runtime_start = time.time()
-
+    print(f"===================================== Init =====================================")
     if running_on_arc:  # Remote ARC run
         parser = argparse.ArgumentParser()
         parser.add_argument('--benchmark_id', type=str, help='benchmark_id', required=True)
@@ -61,34 +61,31 @@ def main():
 
     ############################################# Key Parameters #######################################################
     dx = 2000
-    no_seg_dir = f"{main_dir}/no_segments"
-    run_id = f"reg_{lambda_reg}_{seg_name}_{n_tries}_2daptable_moretrans"
+    no_seg_dir = f"{main_dir}/dijkstra_distances"
+    run_id = f"reg_{lambda_reg}_{n_tries}_2daptable"
     perform_logging = True
-    n_iterations, percent_cutoff = 1000000, 87.5
+    n_iterations, percent_cutoff = 2200, 87.5
     activation_start_s = 0.000
     iter_dt_activation_s, iter_dt_repol_s = 0.002, 0.010
-    use_best_guess, use_monoalg_apd_field, segmental_monoalg_apds = 0, 0, 0
-    use_clustered_output_params = 0
-    plot, use_fibers, target_clinical = 0, 0, 0
+    use_best_guess = 0
+    plot = 0
     log_every_x_iterations = 1  # Must be every iteration to record all unique params, ECGs, RTs
     min_possible_apd90_ms, max_possible_apd90_ms, apd90_snapping_ms = 200, 400, 1
     mother_data_folder = "mother_data"
     ap_table_name = "ap_table_2d"
     fast_download_folder = f"fast_{benchmark_id}"
-    use_best_inf_folder = "Inferences_no_segments"
 
     if use_best_guess:
-        best_params_preload = np.load(f"{main_dir}/{use_best_inf_folder}/analysis/BESTPARAMS_{patient_id}_{bench_dx}_{bench_type}_reg_{lambda_reg}_{seg_name}_1024_2daptable_moretrans.npy", allow_pickle=True).item()
+        best_params_preload = None  # Load best params
 
     mesh_dir = f"{main_dir}/Meshes_{dx}"
 
-    # Load alg segmentation
+    # Load alg
     mesh_filename = utils.find_lvrv_thresh_used(mesh_dir, patient_id, dx, seg_name)
     alg_seg = alg_utils.read_alg_mesh(f"{mesh_dir}/{mesh_filename}")
     lv_rv = alg_seg[7]  # 0: rv, 1: lv
     trans = alg_seg[10]  # 0: endo, 1: epi
     apexb = alg_seg[14]
-    n_cells = len(alg_seg[0])
     xs, ys, zs, *_ = alg_utils.unpack_alg_geometry(alg_seg)
 
     run_dir = f"{main_dir}/{inferences_folder}/{benchmark_id}/{run_id}"
@@ -99,7 +96,7 @@ def main():
     if not os.path.exists(f"{run_dir}/pop_ids_and_diffs"):
         os.makedirs(f"{run_dir}/pop_ids_and_diffs")
 
-    # Optionally copies to run dir some best QRS params, activation times, target QRS, and target QRS+Twave
+    # Copies to run dir some best QRS params, activation times, target QRS, and target QRS+Twave
     if mother_data_folder is not None:
         mother_dir = f"{main_dir}/{inferences_folder}/{benchmark_id}/{mother_data_folder}"
         shutil.copy(f"{mother_dir}/{patient_id}_{bench_dx}_ctrl_bestqrsparams.npy",
@@ -111,7 +108,6 @@ def main():
 
     # Prepare dijkstra distances for radius-wise apd manipulation
     dijk_dist_path = f"{no_seg_dir}/{patient_id}_{dx}_dijk_dists.npy"
-    print("Prepare dijkstra distances")
     if os.path.exists(dijk_dist_path):
         # Load dijkstra dists if already saved
         all_dijk_dists_cm = np.load(dijk_dist_path)
@@ -125,23 +121,11 @@ def main():
 
     lead_names = LEAD_NAMES_12
 
-    seg_field = alg_seg[-1]  # Works for RV seg
-
-    seg_ids = np.unique(seg_field)
-
-    if len(seg_ids) < 1 or len(seg_ids) > 500:
-        raise Exception(
-            f"{len(seg_ids)=} check alg_seg index for segmentation; have you accounted for the 6 geometry fields?")
-
-    all_seg_idxs = [np.where(seg_field == seg_id)[0] for seg_id in seg_ids]  # Which mesh indices belong to each segment
-    n_segments = len(seg_ids)
-    print(f"{n_segments=}")
-
     # Get target leads into correct form
     leads_qrs = np.load(f"{run_dir}/leads_selected_qrs.npy", allow_pickle=True).item()
     leads_target = np.load(f"{run_dir}/leads_selected_qrsandtwave.npy", allow_pickle=True).item()
     times_target_s = leads_target[lead_names[0]][0]
-    # TODO times target sanity check against total_time_s
+
     times_qrs_s = leads_qrs[lead_names[0]][0]
     leads_target_temp = {name: leads_target[name][1] for name in lead_names}
     leads_target = leads_target_temp
@@ -190,7 +174,7 @@ def main():
     sigma_um_param = twm.monoalg_conductivity_to_smoothing_sigma(conductivity)
 
 
-    print(f"{sigma_um_param=}")
+    print(f"Smoothing scale applied: {round(sigma_um_param, 1)}um")
 
     mesh_alg_activation_name = f"{patient_id}_{dx}_activation_times.alg"
     mesh_alg_activation_path = f"{run_dir}/{mesh_alg_activation_name}"
@@ -205,11 +189,10 @@ def main():
     log_inf_params = {"main_dir": main_dir, "run_id": run_id, "patient_id": patient_id, "dx": dx,
                       "n_tries": n_tries, "n_iterations": n_iterations, "percent_cutoff": percent_cutoff,
                       "iter_dt_activation_s": iter_dt_activation_s, "iter_dt_repol_s": iter_dt_repol_s,
-                      "use_fibers": use_fibers, "target_clinical": target_clinical,
                       "min_possible_apd90_ms": min_possible_apd90_ms,
                       "max_possible_apd90_ms": max_possible_apd90_ms, "apd90_snapping_ms": apd90_snapping_ms,
                       "sigma_um_param": sigma_um_param, "n_processors": n_processors,
-                      "log_every_x_iterations": log_every_x_iterations, "n_segments": n_segments,
+                      "log_every_x_iterations": log_every_x_iterations,
                       "qrsparams": qrsparams}
 
     # Read from cache
@@ -280,7 +263,7 @@ def main():
             n_attempts_init += 1
 
             if n_attempts_init > max_attempts_init:
-                raise Exception("Failed to initialise APDs with unique segmental APD distribution")
+                raise Exception("Failed to initialise APDs")
 
     if use_best_guess:
         n_tries = 1
@@ -299,14 +282,11 @@ def main():
 
     activation_times_s = np.round(activation_times_s / ap_time_res_s) * ap_time_res_s
 
-    print(f"{ap_time_res_s=}")
-
     if sigma_um <= 1000.0:
         print(f"Using low smoothing parameter {sigma_um=}, appropriate if setting based on ground truth APD field")
 
     # Pass in all the preprocessed arguments used for T wave computations
-    repol_args_2daptable = (x_i.astype(np.int32), y_i.astype(np.int32), z_i.astype(np.int32), vms_grid.astype(np.int32), dx, smoothed_mask.astype(np.float32), sigma_um, smoothing_cutoff_s,
-                           seg_ids, all_seg_idxs)
+    repol_args_2daptable = x_i.astype(np.int32), y_i.astype(np.int32), z_i.astype(np.int32), vms_grid.astype(np.int32), dx, smoothed_mask.astype(np.float32), sigma_um, smoothing_cutoff_s
 
     count_x, count_y, count_z = neighbour_arrays["count_x"].astype(np.int32), neighbour_arrays["count_y"].astype(np.int32), neighbour_arrays["count_z"].astype(np.int32)
     valid_idxs, valid_positions = neighbour_arrays2["valid_idxs"].astype(np.int32), neighbour_arrays2["valid_positions"].astype(np.int32)
@@ -319,18 +299,16 @@ def main():
     alg = alg[:6]
 
     # QRS is now generated using the AP table to have a QRS of comparable amplitude to the T wave
-    print("QRS part")
     all_activation_times_s = [activation_times_s]
 
     all_electrodes, *_ = twm.batch_ecg_runner(1, 1, twm.pseudo_ecg, times_activation_s,
-                                            electrodes_xyz, elec_grads, dx, neighbour_args, all_all_vms=None,
-                                             qrs_params=None,
+                                            electrodes_xyz, elec_grads, dx, neighbour_args,
                                              twave_params=current_iter_params,
                                              all_activation_times_s=all_activation_times_s,
                                              repol_args=repol_args_2daptable, calc_repol_times=False,
                                              ap_table_args=ap_table_args)
 
-    if not use_best_guess and not use_clustered_output_params and perform_logging:
+    if not use_best_guess and perform_logging:
         log.log_init_twave(run_dir, log_inf_params, times_target_s, leads_target, alg, times_s, activation_times_s)
 
     leads_qrs_sim = ecg.ten_electrodes_to_twelve_leads(all_electrodes[0])
@@ -356,21 +334,17 @@ def main():
         all_activation_times_s = [activation_times_s for _ in range(n_tries)]  # All use same activation sequence
 
         # Compute electrode signals for these initial root nodes
-        print(f"Number of parameter sets being ECG-tested: {len(current_iter_params)}")
         t0_batch = time.time()
         (all_electrodes, _, all_repol_times,
          all_vms_return,
          all_mean_mean_grad_norms) = twm.batch_ecg_runner(n_tries, n_per_batch, twm.pseudo_ecg, times_repol_s,
-                                                         electrodes_xyz, elec_grads, dx, neighbour_args, all_all_vms=None,
-                                                         qrs_params=None,
+                                                         electrodes_xyz, elec_grads, dx, neighbour_args,
                                                          twave_params=current_iter_params,
                                                          all_activation_times_s=all_activation_times_s,
                                                          repol_args=repol_args_2daptable, all_apd_fields=manually_set_apd,
                                                          calc_repol_times=compute_repolarisation_times,
                                                          return_vms=False, ap_table_args=ap_table_args)
         t1_batch = time.time()
-        print(f"{t1_batch - t0_batch} secs on batch ecgs")
-
         print(f"{round((t1_batch - t0_batch) / n_tries, 4)} secs elapsed per try")
 
         alg.append(activation_times_s)
@@ -432,14 +406,12 @@ def main():
                 new_key += 1
 
         print(f"Number of population diff scores: {len(population_diff_scores)}")
-
         # Find the keys with scores less than or equal to the n th percentile value
         scores = list(population_diff_scores.values())  # T wave discrepancy scores
         regularised_scores = list(population_reg_scores.values())
 
         percentile_thresh = np.percentile(regularised_scores, percent_cutoff)  # Uses regularised score
         keys_below = [key for key, value in population_reg_scores.items() if value <= percentile_thresh]  # Better
-
         keys_above = [key for key, value in population_reg_scores.items() if value > percentile_thresh]  # Worse
 
         min_diff_score = min(population_diff_scores.values())
@@ -480,7 +452,6 @@ def main():
 
 
         if iter_no % save_best_every_x == 0:  # Fast-download folder for at-a-glance inference evaluation
-
             alg = alg[:6]
             alg.append(best_apd90s_ms)
             alg.append(best_apd50s_ms)
@@ -503,7 +474,6 @@ def main():
         else:
             tenth_best_score = None
 
-        #print("best reg params:", best_reg_params)
         print(f"Min: {round(min_diff_score, 5)}, 10th best: {tenth_best_score}, Mean: {round(mean_diff_score, 5)}, Uniques: {n_uniques}")
 
 
@@ -514,7 +484,7 @@ def main():
         runtime_current_total = runtime_end - runtime_start
         runtimes.append(runtime_current_total)
 
-        if not use_best_guess and not use_clustered_output_params and perform_logging:
+        if not use_best_guess and perform_logging:
             log.log_progress_twave_no_segments(run_dir, iter_no, log_every_x_iterations, runtimes, all_ids_and_diff_scores,
                                    population_ids, population_diff_scores, ids_and_ecgs_rts_params,
                                    population_reg_scores)

@@ -10,12 +10,12 @@ import random
 
 main_dir = "C:/Users/jammanadmin/Documents/sim-based-inf-data"
 
-inferences_folder, repol, save_analysis = "Inferences_twave_local", True, True
-patient_id_select, patient_id_skip, run_id_select = None, None, None
-stop_thresh, force_iter_final = 0.00002, "max"
+inferences_folder, repol, save_analysis = "Inferences_qrs_local", False, True
+patient_id_select, patient_id_skip, run_id_select = "DTI024", None, None
+stop_thresh, force_iter_final = 0.00002, None
 
 compare_to_truth, benchmarks_folder = True, "New_Benchmarks_APDs"
-iter_step, x_best = 50, 10  # View approximate convergence every iter_step iterations, just the x_best solutions
+iter_step, x_best = 50, 25  # View approximate convergence every iter_step iterations, just the x_best solutions
 
 coarse_dx = 2000
 
@@ -112,8 +112,6 @@ for i_targ, target in enumerate(runs_in_targets.keys()):  # E.g. now in "Inferen
             activation_ms = activation_s * 1000
             print(f"Run {run_id} using {patient_id}_{coarse_dx}_activation_times{select_activation}.alg as activation used")
 
-            """bestqrsparams = np.load(f"{mother_data_path}/{target}_bestqrsparams_None.npy", allow_pickle=True)
-            print(f"{bestqrsparams=}")"""
 
         # Find iteration-wise scores & comparisons to truths to plot convergence
         iters, iter_scores, iter_median_corrs, iter_median_absdiffs = [], [], [], []
@@ -196,13 +194,13 @@ for i_targ, target in enumerate(runs_in_targets.keys()):  # E.g. now in "Inferen
         leads_target_normed = {name: target_leads_normed[name][target_qrs_idxs] for name in lead_names}
         times_target_s = times_s  # Because match_sim_and_target_times is matching targ times to sim times
 
+        ecg_fig_no = random.randint(1_000_000, 9_999_999)
+
         # PLOTTING OF LEAD-SPECIFIC NORMALISATION ECG
         ecg.plot_ecg([times_s, times_target_s],
                      [sim_leads_normed, leads_target_normed],
-                     xlims=[0, 0.45], colors=["red", "black"], fig_no=i_targ * len(runs_in_targets[target]) + i_run + 1, title=target+run_id, show=False,
+                     xlims=[0, 0.45], colors=["red", "black"], fig_no=ecg_fig_no, title=target+run_id, show=False,
                      labels=["Inferred", "Target"])
-
-        ecg_fig_no = random.randint(1_000_000, 9_999_999)
 
         # Finding iter nos of where times + ECGs are stored for best params
         iter_nos_to_pop_ids = laf.ids_to_storage_iter_nos([best_params_reg], all_ids_and_diff_scores)
@@ -237,14 +235,16 @@ for i_targ, target in enumerate(runs_in_targets.keys()):  # E.g. now in "Inferen
 
             alg = alg_utils.read_alg_mesh(f"{main_dir}/Meshes_{coarse_dx}/{patient_id}_{coarse_dx}.alg")
             alg = alg[:6]
-            alg.append(final_times_ms)
+
             if repol:
+                alg.append(final_times_ms)
                 final_apd90s_ms = best_x_times[0] - activation_ms
                 alg.append(final_apd90s_ms)
-            alg_utils.save_alg_mesh(f"{analysis_dir}/{target}_{run_id}_best.alg", alg)
-
-            if not repol:
-                np.save(f"{analysis_dir}/{target}_bestqrsparams_{run_id}.npy", np.array(best_x_params[0], dtype=object))
+                alg_utils.save_alg_mesh(f"{analysis_dir}/{patient_id}_{coarse_dx}_repol_times.alg", alg)
+            else:  # s conversion for activation
+                alg.append(final_times_ms / 1000)
+                alg_utils.save_alg_mesh(f"{analysis_dir}/{patient_id}_{coarse_dx}_activation_times.alg", alg)
+                np.save(f"{analysis_dir}/{target}_bestqrsparams.npy", np.array(best_x_params[0], dtype=object))
 
 axs[0, 0].set_ylabel("Scores")
 axs[0, 0].legend(fontsize='x-small', borderpad=0.1, labelspacing=0.2, handletextpad=0.2, loc='best')

@@ -229,8 +229,7 @@ def make_vms_field_2daptable(times_s, activation_times_s, twave_params, ap_table
      apd90_step, apd50_step, ap_time_res_s, possible_apd50s_per_apd90) = ap_table_args
 
     # Unpack repol_args
-    (x_i, y_i, z_i, vms_grid, dx, smoothed_mask, sigma_um, smoothing_cutoff_s,
-    seg_ids, all_seg_idxs) = repol_args_2daptable
+    x_i, y_i, z_i, vms_grid, dx, smoothed_mask, sigma_um, smoothing_cutoff_s = repol_args_2daptable
 
     if apd90_field_ms is not None and apd50_field_ms is not None:
         print("Using existing AP field")
