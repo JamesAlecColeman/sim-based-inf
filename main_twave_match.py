@@ -67,8 +67,7 @@ def main():
     n_iterations, percent_cutoff = 2200, 87.5
     activation_start_s = 0.000
     iter_dt_activation_s, iter_dt_repol_s = 0.002, 0.010
-    use_best_guess = 0
-    plot = 0
+    use_best_guess, plot = 0, 0
     log_every_x_iterations = 1  # Must be every iteration to record all unique params, ECGs, RTs
     min_possible_apd90_ms, max_possible_apd90_ms, apd90_snapping_ms = 200, 400, 1
     mother_data_folder = "mother_data"
