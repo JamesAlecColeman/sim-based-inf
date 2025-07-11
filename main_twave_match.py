@@ -416,6 +416,7 @@ def main():
 
         min_diff_score = min(population_diff_scores.values())
         min_i_try_reg = min(population_reg_scores, key=population_reg_scores.get)
+        min_reg_score = population_reg_scores[min_i_try_reg]
         best_reg_params = population_params[min_i_try_reg]
         hash_best_param = twm.hash_twave_param(best_reg_params)
 
@@ -475,7 +476,7 @@ def main():
             tenth_best_score = None
 
         print(f"Min: {round(min_diff_score, 5)}, 10th best: {tenth_best_score}, Mean: {round(mean_diff_score, 5)}, Uniques: {n_uniques}")
-
+        print(f"Min Reg: {round(min_reg_score, 5)}")
 
         if use_best_guess:
             print("All diff scores:", population_diff_scores.values())
