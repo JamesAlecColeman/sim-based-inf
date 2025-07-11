@@ -87,6 +87,7 @@ def main():
     trans = alg_seg[10]  # 0: endo, 1: epi
     apexb = alg_seg[14]
     xs, ys, zs, *_ = alg_utils.unpack_alg_geometry(alg_seg)
+    n_cells = len(xs)
 
     run_dir = f"{main_dir}/{inferences_folder}/{benchmark_id}/{run_id}"
     print(f"{run_dir=}")
@@ -156,15 +157,6 @@ def main():
     (ap_table_arr, ap_table_rmps, min_apd90, max_apd90, min_apd50, max_apd50,
      apd90_step, apd50_step, ap_time_res_s, possible_apd50s_per_apd90) = ap_table_args
 
-    # Loading geometry
-    mesh_alg_name = f"{patient_id}_{dx}.alg"
-    mesh_alg_path = f"{main_dir}/Meshes_{dx}/{mesh_alg_name}"
-    print(f"Input alg mesh: {mesh_alg_path}")
-    alg = alg_utils.read_alg_mesh(mesh_alg_path)
-    xs, ys, zs, lxs, lys, lzs = alg_utils.unpack_alg_geometry(alg)
-    dx = alg_utils.get_dx(xs)
-    n_cells = len(xs)
-
     # Use of existing activation times from previous QRS personalisation
     qrsparams = np.load(f"{run_dir}/{patient_id}_{bench_dx}_ctrl_bestqrsparams.npy", allow_pickle=True)
     print(f"{qrsparams=}")
@@ -172,15 +164,12 @@ def main():
     conductivity = twm.monoalg_cv_to_conductivity(v_myo_cm_per_s)
 
     sigma_um_param = twm.monoalg_conductivity_to_smoothing_sigma(conductivity)
-
-
     print(f"Smoothing scale applied: {round(sigma_um_param, 1)}um")
 
     mesh_alg_activation_name = f"{patient_id}_{dx}_activation_times.alg"
     mesh_alg_activation_path = f"{run_dir}/{mesh_alg_activation_name}"
     alg_activation = alg_utils.read_alg_mesh(mesh_alg_activation_path)
     activation_times_s = np.array(alg_activation[-1])
-
 
     sigma_um = sigma_um_param
     manually_set_apd = None
@@ -202,10 +191,8 @@ def main():
     endo_labels, labels_meaning, plane_6_params, electrodes_xyz = cache.check_cache(mesh_info_dict, keys_to_read)
 
     # Preprocessing for pseudo ECG computation
-
     grid_dict = alg_utils.make_grid_dictionary(xs, ys, zs)
     neighbour_arrays, neighbour_arrays2 = ecg.get_neighbour_arrays(xs, ys, zs, dx, grid_dict)
-
     elec_grads = ecg.precompute_elec_grads(xs, ys, zs, electrodes_xyz, dx, neighbour_arrays).astype(np.float32)
 
     # Preprocess parts of smoothing
@@ -296,7 +283,7 @@ def main():
     neighbour_args = (
     count_x, count_y, count_z, valid_idxs, valid_positions, valid_directions_for_neighbors, valid_offsets_for_neighbors)
 
-    alg = alg[:6]
+    alg = alg_seg[:6]
 
     # QRS is now generated using the AP table to have a QRS of comparable amplitude to the T wave
     all_activation_times_s = [activation_times_s]
@@ -358,6 +345,7 @@ def main():
         population_ids_check = {}
 
         for i_try in tries:
+            # Electrodes to leads and scoring
             leads_twave_sim = ecg.ten_electrodes_to_twelve_leads(all_electrodes[i_try])
             population_diff_scores[i_try], times_target_subset_s, all_leads_sim[
                 i_try], target_full_ecg_leads_normed = twm.get_diff_score(times_repol_s, leads_twave_sim, times_target_s,
@@ -371,7 +359,6 @@ def main():
             population_ids_check[param_id] = 1
 
         for i_try, twave_param in current_iter_params.items():  # Store all params, diff scores, times and leads
-
             store_repol_times_ms = None
 
             if compute_repolarisation_times:
@@ -380,7 +367,6 @@ def main():
 
             param_id = twm.hash_twave_param(twave_param)
             all_ids_and_diff_scores[param_id] = [population_diff_scores[i_try], iter_no, population_reg_scores[i_try]]
-
             ids_and_ecgs_rts_params[param_id] = [all_leads_sim[i_try], store_repol_times_ms, twave_param]
             all_ids_and_grad_norms[param_id] = all_mean_mean_grad_norms[i_try]
 
@@ -388,10 +374,7 @@ def main():
         population_params = current_iter_params.copy()
         new_key = max(population_diff_scores.keys()) + 1
 
-
         for key, twave_param in mutated_params.items():  # mutated_params is of the population size
-            # current_iter_params is of size n_tries of this iteration (unseen params)
-
             param_id = twm.hash_twave_param(twave_param)
 
             if param_id in all_ids_and_diff_scores and param_id not in population_ids_check:
@@ -414,12 +397,12 @@ def main():
         keys_below = [key for key, value in population_reg_scores.items() if value <= percentile_thresh]  # Better
         keys_above = [key for key, value in population_reg_scores.items() if value > percentile_thresh]  # Worse
 
+        # Best scores / params this iter
         min_diff_score = min(population_diff_scores.values())
         min_i_try_reg = min(population_reg_scores, key=population_reg_scores.get)
         min_reg_score = population_reg_scores[min_i_try_reg]
         best_reg_params = population_params[min_i_try_reg]
         hash_best_param = twm.hash_twave_param(best_reg_params)
-
 
         mutated_params = twm.mutate_twave_params_2daptable(keys_above, keys_below, population_params, possible_apd90s_ms,
                                                           min_possible_apd90_ms, max_possible_apd90_ms,
@@ -428,9 +411,7 @@ def main():
         next_iter_params = {}
         next_iter_tries_ct = 0
         for key, twave_param in mutated_params.items():
-
             param_id = twm.hash_twave_param(twave_param)
-
             if param_id not in all_ids_and_diff_scores:  # Only simulate unseen params
                 next_iter_params[next_iter_tries_ct] = twave_param
                 next_iter_tries_ct += 1

@@ -199,7 +199,7 @@ def main():
     activation_cutoff_s = total_time_s
     runtimes = []
 
-    # Main iterative refinement of root nodes loop
+    # Main iterative refinement of activation models loop
     for iter_no in range(n_iterations):
         n_tries = len(current_iter_params)
         n_per_batch = int(round(n_tries / n_processors))
