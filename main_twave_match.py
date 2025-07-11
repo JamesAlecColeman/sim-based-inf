@@ -53,7 +53,7 @@ def main():
         bench_type = "hcmbig"
         benchmark_id = f"{patient_id}_{bench_dx}_{bench_type}"
         seg_name = "rvseg"
-        n_tries = 512
+        n_tries = 1024
         lambda_reg = 281.0
         n_processors = 4
         inferences_folder = "Inferences_twave_local"

@@ -42,7 +42,7 @@ def main():
         patient_id, bench_dx = "DTI024", 500
         bench_type = "ctrl"
         benchmark_id = f"{patient_id}_{bench_dx}_{bench_type}"
-        n_tries = 512
+        n_tries = 1024
         n_processors = 4
         inferences_folder = "Inferences_qrs_local"
         save_best_every_x = 1
