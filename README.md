@@ -5,6 +5,8 @@ This repository accompanies the arXiv preprint:
 ## Overview
 Implementation of a simulation-based framework to infer ventricular activation and repolarisation times from a biventricular mesh and 12-lead ECG signal. Evaluated against monodomain ground truth simulations, for use on simulated target ECGs.
 
+A new version for use on clinical ECGs is in development.
+
 ## Environment
 Python 3.12.6 (64-bit Windows, MSC v.1940)
 
