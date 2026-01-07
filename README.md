@@ -1,11 +1,11 @@
 # sim-based-inf
 This repository accompanies the article:  
-[Simulation-based digital twinning of activation and repolarisation sequences from the ECG across healthy and diseased hearts](https://arxiv.org/abs/2506.22243)
+[Simulation-based digital twinning of activation and repolarisation sequences from the ECG across healthy and diseased hearts](https://www.sciencedirect.com/science/article/pii/S0010482525015756)
 
 ## Overview
 Implementation of a simulation-based framework to infer ventricular activation and repolarisation times from a biventricular mesh and 12-lead ECG signal. Evaluated against monodomain ground truth simulations, for use on simulated target ECGs.
 
-A new version for use on clinical ECGs is in development.
+A new version is being tested on clinical ECGs at https://github.com/JamesAlecColeman/sim-based-inf-clin.
 
 ## Environment
 Python 3.12.6 (64-bit Windows, MSC v.1940)
