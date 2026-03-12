@@ -5,7 +5,7 @@ This repository accompanies the article:
 ## Overview
 Implementation of a simulation-based framework to infer ventricular activation and repolarisation times from a biventricular mesh and 12-lead ECG signal. Evaluated against monodomain ground truth simulations, for use on simulated target ECGs.
 
-A new version is being tested on clinical ECGs at https://github.com/JamesAlecColeman/sim-based-inf-clin.
+**It is recommended to use the latest version being tested on clinical ECGs at https://github.com/JamesAlecColeman/sim-based-inf-clin.**
 
 ## Environment
 Python 3.12.6 (64-bit Windows, MSC v.1940)
